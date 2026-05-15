@@ -79,9 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Pokédle — Daily Pokémon Guessing Game" },
       { name: "description", content: "Guess the daily mystery Pokémon in 7 tries. Compare type, generation, color, height, weight and evolution stage." },
       { property: "og:title", content: "Pokédle — Daily Pokémon Guessing Game" },
-      { property: "og:description", content: "Guess the daily mystery Pokémon in 7 tries." },
+      { property: "og:description", content: "Guess the daily mystery Pokémon in 7 tries. Compare type, generation, color, height, weight and evolution stage." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Pokédle — Daily Pokémon Guessing Game" },
+      { name: "twitter:description", content: "Guess the daily mystery Pokémon in 7 tries. Compare type, generation, color, height, weight and evolution stage." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/fbab0c05-4730-49b1-b118-940294cc0adb" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/fbab0c05-4730-49b1-b118-940294cc0adb" },
     ],
     links: [
       {
