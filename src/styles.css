@@ -95,6 +95,14 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+
+  /* Pokédle game tile colors */
+  --tile-correct: oklch(0.65 0.18 145);
+  --tile-correct-foreground: oklch(0.99 0 0);
+  --tile-partial: oklch(0.78 0.16 85);
+  --tile-partial-foreground: oklch(0.2 0.02 60);
+  --tile-wrong: oklch(0.55 0.04 260);
+  --tile-wrong-foreground: oklch(0.99 0 0);
 }
 
 .dark {
@@ -130,6 +138,13 @@
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
+
+  --tile-correct: oklch(0.6 0.18 145);
+  --tile-correct-foreground: oklch(0.99 0 0);
+  --tile-partial: oklch(0.7 0.16 85);
+  --tile-partial-foreground: oklch(0.15 0.02 60);
+  --tile-wrong: oklch(0.35 0.03 260);
+  --tile-wrong-foreground: oklch(0.99 0 0);
 }
 
 @layer base {
