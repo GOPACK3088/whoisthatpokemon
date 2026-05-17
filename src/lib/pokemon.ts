@@ -15,7 +15,7 @@ export interface Pokemon {
 
 export const POKEMON: Pokemon[] = pokemonData as Pokemon[];
 export const POKEMON_BY_NAME = new Map(POKEMON.map((p) => [p.name, p]));
-export const MAX_GUESSES = 7;
+export const MAX_GUESSES = 10;
 
 export function todayKey(): string {
   const d = new Date();
