@@ -8,6 +8,7 @@ export interface DailyState {
   finished: boolean;
   won: boolean;
   submitted: boolean; // whether result was synced to server (when signed in)
+  catchResult?: { caught: boolean; moveChosen: string } | null;
 }
 
 export interface LocalStats {
