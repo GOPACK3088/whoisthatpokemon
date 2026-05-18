@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 export function Header() {
   const { user, loading } = useAuth();
   return (
-    <header className="border-b border-border bg-card/50 backdrop-blur sticky top-0 z-40">
+    <header className="border-b border-border bg-black sticky top-0 z-40">
       <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
         <Link to="/" className="font-bold text-lg tracking-tight">
           Pokédle
