@@ -19,6 +19,7 @@ import { CatchPhase } from "@/components/CatchPhase";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/use-auth";
 import { submitDailyResult } from "@/lib/results.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   component: GamePage,
@@ -192,7 +193,7 @@ function GamePage() {
     saveState({ daily, stats });
   }
 
-  function handleCatchComplete(caught: boolean, moveChosen: string) {
+  async function handleCatchComplete(caught: boolean, moveChosen: string) {
     const result = { caught, moveChosen };
     setCatchResult(result);
     setCatchPhaseActive(false);
@@ -201,6 +202,23 @@ function GamePage() {
     if (state.daily) {
       (state.daily as typeof state.daily & { catchResult: typeof result }).catchResult = result;
       saveState(state);
+    }
+    // Persist to Supabase if caught and signed in
+    if (caught && user) {
+      const { error } = await supabase
+        .from("caught_pokemon")
+        .upsert(
+          {
+            user_id: user.id,
+            pokemon_id: answer.id,
+            pokemon_name: answer.name,
+            caught_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,pokemon_id" },
+        );
+      if (error) {
+        console.error("Failed to save caught Pok\u00e9mon:", error);
+      }
     }
   }
 
