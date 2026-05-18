@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/use-auth";
 
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,
-  head: () => ({ meta: [{ title: "Profile — Pokédle" }] }),
+  head: () => ({ meta: [{ title: "Profile — PokéCatch" }] }),
 });
 
 function ProfilePage() {
@@ -22,9 +22,9 @@ function ProfilePage() {
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 text-center space-y-3">
-        <h1 className="text-2xl font-bold">Profile</h1>
-        <p className="text-muted-foreground">Sign in to view your stats.</p>
-        <Link to="/login" className="text-primary underline">Sign in</Link>
+        <h1 className="text-2xl font-bold text-white">Profile</h1>
+        <p className="text-zinc-400">Sign in to view your stats.</p>
+        <Link to="/login" className="text-yellow-400 underline">Sign in</Link>
       </div>
     );
   }
@@ -36,12 +36,12 @@ function ProfilePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">{data?.profile?.display_name ?? "Trainer"}</h1>
-        <p className="text-sm text-muted-foreground">{user.email}</p>
+        <h1 className="text-3xl font-bold text-white">{data?.profile?.display_name ?? "Trainer"}</h1>
+        <p className="text-sm text-zinc-400">{user.email}</p>
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <p className="text-zinc-400">Loading…</p>
       ) : (
         <>
           <section className="grid grid-cols-4 gap-3">
@@ -52,13 +52,13 @@ function ProfilePage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-xl font-semibold">Guess distribution</h2>
+            <h2 className="text-xl font-semibold text-white">Guess distribution</h2>
             <div className="space-y-1">
               {[1, 2, 3, 4, 5, 6, 7].map((n) => {
                 const v = dist[String(n)] ?? 0;
                 return (
                   <div key={n} className="flex items-center gap-2 text-sm">
-                    <span className="w-4 text-right text-muted-foreground">{n}</span>
+                    <span className="w-4 text-right text-zinc-400">{n}</span>
                     <div className="flex-1 bg-muted rounded h-6 overflow-hidden">
                       <div
                         className="bg-[var(--tile-correct)] h-full flex items-center justify-end px-2 text-xs text-[var(--tile-correct-foreground)] font-medium"
@@ -74,18 +74,18 @@ function ProfilePage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-xl font-semibold">Recent results</h2>
-            <div className="rounded-lg border border-border divide-y divide-border">
+            <h2 className="text-xl font-semibold text-white">Recent results</h2>
+            <div className="rounded-lg border border-zinc-700 divide-y divide-zinc-700">
               {(data?.results ?? []).map((r) => (
                 <div key={r.puzzle_date} className="flex justify-between items-center px-3 py-2 text-sm">
-                  <span className="font-mono">{r.puzzle_date}</span>
-                  <span className={r.won ? "text-[var(--tile-correct)] font-medium" : "text-muted-foreground"}>
+                  <span className="font-mono text-zinc-300">{r.puzzle_date}</span>
+                  <span className={r.won ? "text-[var(--tile-correct)] font-medium" : "text-zinc-500"}>
                     {r.won ? `Solved in ${r.guesses_used}/7` : "Missed"}
                   </span>
                 </div>
               ))}
               {(data?.results.length ?? 0) === 0 && (
-                <div className="px-3 py-6 text-center text-muted-foreground text-sm">
+                <div className="px-3 py-6 text-center text-zinc-500 text-sm">
                   Play your first puzzle!
                 </div>
               )}
@@ -99,9 +99,9 @@ function ProfilePage() {
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-border p-3 text-center">
-      <div className="text-xl font-bold">{value}</div>
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</div>
+    <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-center">
+      <div className="text-xl font-bold text-white">{value}</div>
+      <div className="text-[10px] text-zinc-400 uppercase tracking-wide">{label}</div>
     </div>
   );
 }

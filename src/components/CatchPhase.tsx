@@ -452,7 +452,7 @@ export function CatchPhase({ pokemon, onCatchComplete }: CatchPhaseProps) {
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
                 "
               >
-                <span className="font-semibold text-sm leading-tight">{move.name}</span>
+                <span className="font-semibold text-sm leading-tight text-white">{move.name}</span>
                 <span
                   className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide text-white ${typeColor(move.type)}`}
                 >

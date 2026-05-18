@@ -40,7 +40,7 @@ export function GuessRow({ result }: { result: GuessResult }) {
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-sm">
         <img src={p.spriteUrl} alt={p.name} className="w-10 h-10 object-contain" loading="lazy" />
-        <span className="font-medium capitalize">{p.name.replace(/-/g, " ")}</span>
+        <span className="font-medium capitalize text-white">{p.name.replace(/-/g, " ")}</span>
       </div>
       <div className="grid grid-cols-7 gap-1">
         <Tile attr={result.type1} label="Type 1" value={p.types[0]} />

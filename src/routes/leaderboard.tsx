@@ -8,7 +8,7 @@ export const Route = createFileRoute("/leaderboard")({
   component: LeaderboardPage,
   head: () => ({
     meta: [
-      { title: "Leaderboard — Pokédle" },
+      { title: "Leaderboard — PokéCatch" },
       { name: "description", content: "Top streaks and today's solve rate." },
     ],
   }),
@@ -27,19 +27,19 @@ function LeaderboardPage() {
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 text-center space-y-3">
-        <h1 className="text-2xl font-bold">Leaderboard</h1>
-        <p className="text-muted-foreground">Sign in to view the leaderboard.</p>
-        <Link to="/login" className="text-primary underline">Sign in</Link>
+        <h1 className="text-2xl font-bold text-white">Leaderboard</h1>
+        <p className="text-zinc-400">Sign in to view the leaderboard.</p>
+        <Link to="/login" className="text-yellow-400 underline">Sign in</Link>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
-      <h1 className="text-3xl font-bold">Leaderboard</h1>
+      <h1 className="text-3xl font-bold text-white">Leaderboard</h1>
 
       {isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <p className="text-zinc-400">Loading…</p>
       ) : (
         <>
           <section className="grid grid-cols-3 gap-3">
@@ -56,10 +56,10 @@ function LeaderboardPage() {
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-xl font-semibold">Top streaks</h2>
-            <div className="rounded-lg border border-border overflow-hidden">
+            <h2 className="text-xl font-semibold text-white">Top streaks</h2>
+            <div className="rounded-lg border border-zinc-700 overflow-hidden">
               <table className="w-full text-sm">
-                <thead className="bg-muted text-muted-foreground">
+                <thead className="bg-zinc-800 text-zinc-400">
                   <tr>
                     <th className="text-left px-3 py-2">#</th>
                     <th className="text-left px-3 py-2">Player</th>
@@ -70,19 +70,19 @@ function LeaderboardPage() {
                 </thead>
                 <tbody>
                   {data?.topStreaks.map((s, i) => (
-                    <tr key={s.user_id} className="border-t border-border">
-                      <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                      <td className="px-3 py-2 font-medium">{s.display_name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{s.max_streak}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{s.current_streak}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                    <tr key={s.user_id} className="border-t border-zinc-700">
+                      <td className="px-3 py-2 text-zinc-500">{i + 1}</td>
+                      <td className="px-3 py-2 font-medium text-white">{s.display_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">{s.max_streak}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">{s.current_streak}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">
                         {s.total_won}/{s.total_played}
                       </td>
                     </tr>
                   ))}
                   {(data?.topStreaks.length ?? 0) === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                      <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
                         No results yet — be the first!
                       </td>
                     </tr>
@@ -99,9 +99,9 @@ function LeaderboardPage() {
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-border p-4 text-center">
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
+    <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-4 text-center">
+      <div className="text-2xl font-bold text-white">{value}</div>
+      <div className="text-xs text-zinc-400 uppercase tracking-wide">{label}</div>
     </div>
   );
 }

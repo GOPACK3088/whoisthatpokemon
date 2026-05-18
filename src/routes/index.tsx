@@ -275,7 +275,7 @@ function GamePage() {
             <div className="text-sm text-muted-foreground uppercase tracking-wide">
               {won ? "You got it!" : "Today's Pokémon was"}
             </div>
-            <div className="text-2xl font-bold capitalize">{answer.name.replace(/-/g, " ")}</div>
+            <div className="text-2xl font-bold capitalize text-white">{answer.name.replace(/-/g, " ")}</div>
             <div className="text-sm text-muted-foreground mt-1">
               {won ? `Solved in ${guessIds.length}/${MAX_GUESSES}` : `Better luck tomorrow!`}
             </div>

@@ -8,11 +8,11 @@ export function Header() {
   return (
     <header className="border-b border-border bg-black sticky top-0 z-40">
       <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
-        <Link to="/" className="font-bold text-lg tracking-tight">
+        <Link to="/" className="font-bold text-lg tracking-tight text-white">
           PokéCatch
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
-          <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-accent" activeOptions={{ exact: true }} activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
+        <nav className="flex items-center gap-1 text-sm text-white">
+          <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeOptions={{ exact: true }} activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
             Play
           </Link>
           <Link to="/how-to-play" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
@@ -26,12 +26,13 @@ export function Header() {
           </Link>
           {!loading && user ? (
             <>
-              <Link to="/profile" className="px-3 py-1.5 rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
+              <Link to="/profile" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
                 Profile
               </Link>
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-white hover:text-white"
                 onClick={() => supabase.auth.signOut()}
               >
                 Sign out
