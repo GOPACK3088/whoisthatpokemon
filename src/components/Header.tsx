@@ -15,11 +15,14 @@ export function Header() {
           <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-accent" activeOptions={{ exact: true }} activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
             Play
           </Link>
-          <Link to="/how-to-play" className="px-3 py-1.5 rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
+          <Link to="/how-to-play" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
             How
           </Link>
-          <Link to="/leaderboard" className="px-3 py-1.5 rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
+          <Link to="/leaderboard" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
             Leaderboard
+          </Link>
+          <Link to="/pokedex" className="px-3 py-1.5 rounded-md hover:bg-accent text-white" activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent text-white" }}>
+            Pokédex
           </Link>
           {!loading && user ? (
             <>

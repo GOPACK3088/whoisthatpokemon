@@ -71,7 +71,7 @@ export function GuessInput({
           placeholder="Guess a Pokémon…"
           disabled={disabled}
           autoComplete="off"
-          className="flex-1"
+          className="flex-1 text-white placeholder:text-white/50 bg-transparent border-white/20"
         />
         <Button onClick={() => submit()} disabled={disabled || matches.length === 0}>
           Guess

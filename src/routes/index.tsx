@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -45,6 +45,52 @@ function Countdown() {
   );
 }
 
+function WelcomeModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+        <div className="text-center space-y-1">
+          <div className="text-4xl">🎮</div>
+          <h2 className="text-xl font-bold text-white">How to Play PokéCatch</h2>
+          <p className="text-sm text-zinc-400">Two phases, one mystery Pokémon.</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400 font-bold text-sm">1</div>
+            <div>
+              <div className="font-semibold text-white text-sm">Guess the Pokémon</div>
+              <div className="text-xs text-zinc-400 mt-0.5">You get {MAX_GUESSES} guesses. After each one, a color-coded grid reveals how close you are across 7 attributes — type, generation, color, height, weight, and evolution stage.</div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 font-bold text-sm">2</div>
+            <div>
+              <div className="font-semibold text-white text-sm">Catch it with the right move</div>
+              <div className="text-xs text-zinc-400 mt-0.5">Once you identify the Pokémon, you enter the catch phase. Pick the right move to successfully catch it — type matchups matter!</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 items-start rounded-xl bg-zinc-800 border border-zinc-700 p-3">
+          <div className="text-2xl">🏆</div>
+          <div className="text-xs text-zinc-300">
+            <span className="font-semibold text-white">Track your progress.</span>{" "}
+            <Link to="/login" className="text-yellow-400 underline underline-offset-2 hover:text-yellow-300">
+              Sign up for free
+            </Link>{" "}
+            to save your streak, build your personal Pokédex, and compete on the leaderboard.
+          </div>
+        </div>
+
+        <Button className="w-full" onClick={onClose}>
+          Let's go! 🚀
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function GamePage() {
   const date = todayKey();
   const answer = useMemo(() => getDailyPokemon(date), [date]);
@@ -57,6 +103,19 @@ function GamePage() {
   const [submitted, setSubmitted] = useState(false);
   const [catchPhaseActive, setCatchPhaseActive] = useState(false);
   const [catchResult, setCatchResult] = useState<{ caught: boolean; moveChosen: string } | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Show welcome modal on first ever visit
+  useEffect(() => {
+    if (!localStorage.getItem("pokecatch_welcomed")) {
+      setShowWelcome(true);
+    }
+  }, []);
+
+  function dismissWelcome() {
+    localStorage.setItem("pokecatch_welcomed", "1");
+    setShowWelcome(false);
+  }
 
   // Hydrate from localStorage on mount
   useEffect(() => {
@@ -166,6 +225,7 @@ function GamePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
+      {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold tracking-tight text-white">Daily PokéCatch</h1>
         <p className="text-sm text-muted-foreground">
