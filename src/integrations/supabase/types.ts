@@ -14,12 +14,67 @@ export type Database = {
   }
   public: {
     Tables: {
+      catch_results: {
+        Row: {
+          caught: boolean
+          created_at: string | null
+          id: string
+          move_chosen: string | null
+          puzzle_date: string
+          slot: string
+          user_id: string
+        }
+        Insert: {
+          caught: boolean
+          created_at?: string | null
+          id?: string
+          move_chosen?: string | null
+          puzzle_date: string
+          slot: string
+          user_id: string
+        }
+        Update: {
+          caught?: boolean
+          created_at?: string | null
+          id?: string
+          move_chosen?: string | null
+          puzzle_date?: string
+          slot?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      caught_pokemon: {
+        Row: {
+          caught_at: string | null
+          id: string
+          pokemon_id: number
+          pokemon_name: string
+          user_id: string
+        }
+        Insert: {
+          caught_at?: string | null
+          id?: string
+          pokemon_id: number
+          pokemon_name: string
+          user_id: string
+        }
+        Update: {
+          caught_at?: string | null
+          id?: string
+          pokemon_id?: number
+          pokemon_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_results: {
         Row: {
           created_at: string
           guesses_used: number
           id: string
           puzzle_date: string
+          slot: string
           user_id: string
           won: boolean
         }
@@ -28,6 +83,7 @@ export type Database = {
           guesses_used: number
           id?: string
           puzzle_date: string
+          slot?: string
           user_id: string
           won: boolean
         }
@@ -36,6 +92,7 @@ export type Database = {
           guesses_used?: number
           id?: string
           puzzle_date?: string
+          slot?: string
           user_id?: string
           won?: boolean
         }
