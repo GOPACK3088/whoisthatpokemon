@@ -15,6 +15,7 @@ import {
 import { applyResultToStats, loadState, saveState } from "@/lib/local-storage";
 import { GuessRow } from "@/components/GuessRow";
 import { GuessInput } from "@/components/GuessInput";
+import { CatchPhase } from "@/components/CatchPhase";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/use-auth";
 import { submitDailyResult } from "@/lib/results.functions";
@@ -54,6 +55,8 @@ function GamePage() {
   const [finished, setFinished] = useState(false);
   const [won, setWon] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [catchPhaseActive, setCatchPhaseActive] = useState(false);
+  const [catchResult, setCatchResult] = useState<{ caught: boolean; moveChosen: string } | null>(null);
 
   // Hydrate from localStorage on mount
   useEffect(() => {
@@ -63,6 +66,10 @@ function GamePage() {
       setFinished(daily.finished);
       setWon(daily.won);
       setSubmitted(daily.submitted);
+      // If already finished and won, catch phase is already done (page reload)
+      if (daily.finished && daily.won) {
+        setCatchResult(daily.catchResult ?? { caught: false, moveChosen: "" });
+      }
     }
   }, [date]);
 
@@ -105,6 +112,10 @@ function GamePage() {
     if (isDone) {
       setFinished(true);
       setWon(isWin);
+      if (isWin) {
+        // Trigger catch phase before showing results
+        setCatchPhaseActive(true);
+      }
     }
 
     const state = loadState();
@@ -114,6 +125,7 @@ function GamePage() {
       finished: isDone,
       won: isWin,
       submitted: false,
+      catchResult: null,
     };
     const stats = isDone
       ? applyResultToStats(state.stats, isWin, newIds.length, date)
@@ -121,10 +133,27 @@ function GamePage() {
     saveState({ daily, stats });
   }
 
+  function handleCatchComplete(caught: boolean, moveChosen: string) {
+    const result = { caught, moveChosen };
+    setCatchResult(result);
+    setCatchPhaseActive(false);
+    // Persist catch result to localStorage
+    const state = loadState();
+    if (state.daily) {
+      (state.daily as typeof state.daily & { catchResult: typeof result }).catchResult = result;
+      saveState(state);
+    }
+  }
+
   function handleShare() {
     const grid = emojiGrid(results);
     const score = won ? `${guessIds.length}/${MAX_GUESSES}` : `X/${MAX_GUESSES}`;
-    const text = `Pokédle ${date} ${score}\n\n${grid}`;
+    const catchLine = catchResult
+      ? catchResult.caught
+        ? `🎯 Caught with ${catchResult.moveChosen}!`
+        : `💨 It got away…`
+      : "";
+    const text = `Pokédle ${date} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {});
     } else {
@@ -168,7 +197,14 @@ function GamePage() {
           ))}
       </div>
 
-      {finished && (
+      {/* Catch phase — shown after a correct guess, before the results card */}
+      {catchPhaseActive && won && (
+        <div className="rounded-xl border border-border bg-card p-6">
+          <CatchPhase pokemon={answer} onCatchComplete={handleCatchComplete} />
+        </div>
+      )}
+
+      {finished && !catchPhaseActive && (
         <div className="rounded-xl border border-border bg-card p-6 text-center space-y-3">
           <img
             src={answer.spriteUrl}
@@ -184,6 +220,19 @@ function GamePage() {
               {won ? `Solved in ${guessIds.length}/${MAX_GUESSES}` : `Better luck tomorrow!`}
             </div>
           </div>
+          {won && catchResult && (
+            <div className="rounded-lg bg-muted px-4 py-2 text-sm">
+              {catchResult.caught ? (
+                <span className="text-[var(--tile-correct)] font-medium">
+                  🎯 Caught with {catchResult.moveChosen}!
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  💨 It got away…
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex justify-center gap-2">
             <Button onClick={handleShare}>Share result</Button>
           </div>
