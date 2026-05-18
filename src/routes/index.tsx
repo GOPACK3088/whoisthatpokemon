@@ -24,7 +24,7 @@ export const Route = createFileRoute("/")({
   component: GamePage,
   head: () => ({
     meta: [
-      { title: "Pokédle — Daily Pokémon Guessing Game" },
+      { title: "PokéCatch — Daily Pokémon Guessing Game" },
     ],
   }),
 });
@@ -167,7 +167,7 @@ function GamePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Daily Pokédle</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Daily PokéCatch</h1>
         <p className="text-sm text-muted-foreground">
           Guess the mystery Pokémon in {MAX_GUESSES} tries. New puzzle in <Countdown />
         </p>

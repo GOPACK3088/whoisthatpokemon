@@ -9,7 +9,7 @@ export function Header() {
     <header className="border-b border-border bg-black sticky top-0 z-40">
       <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
         <Link to="/" className="font-bold text-lg tracking-tight">
-          Pokédle
+          PokéCatch
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-accent" activeOptions={{ exact: true }} activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent" }}>
