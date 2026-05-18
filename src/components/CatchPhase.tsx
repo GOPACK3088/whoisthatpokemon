@@ -224,6 +224,12 @@ export function CatchPhase({ pokemon, onCatchComplete }: CatchPhaseProps) {
   const [wiggleCount, setWiggleCount] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wiggleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll into view on mount
+  useEffect(() => {
+    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   // Fetch weaknesses and generate moves
   useEffect(() => {
@@ -303,99 +309,7 @@ export function CatchPhase({ pokemon, onCatchComplete }: CatchPhaseProps) {
     }
   }
 
-  // ── Loading ───────────────────────────────────────────────────────────────
-
-  if (phase === "loading") {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <div className="w-8 h-8 border-2 border-border border-t-[var(--tile-correct)] rounded-full animate-spin" />
-        <p className="text-sm text-muted-foreground">A wild Pokémon appeared…</p>
-      </div>
-    );
-  }
-
-  // ── Caught ────────────────────────────────────────────────────────────────
-
-  if (phase === "caught") {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 space-y-5 animate-fade-in">
-        <div className="text-5xl animate-bounce">🎉</div>
-        <Pokeball />
-        <div className="text-center space-y-1">
-          <p className="text-3xl font-bold tracking-tight text-[var(--tile-correct)]">
-            Gotcha!
-          </p>
-          <p className="text-muted-foreground capitalize">
-            {pokemon.name.replace(/-/g, " ")} was caught!
-          </p>
-        </div>
-        <div className="rounded-full px-3 py-1 bg-[var(--tile-correct)] text-[var(--tile-correct-foreground)] text-xs font-medium">
-          {chosenMove?.name}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Failed: time ran out ──────────────────────────────────────────────────
-
-  if (phase === "failed_time") {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 space-y-5">
-        <img
-          src={pokemon.spriteUrl}
-          alt={pokemon.name}
-          className="w-32 h-32 object-contain opacity-40 grayscale"
-        />
-        <div className="text-center space-y-1">
-          <p className="text-2xl font-bold text-[var(--tile-wrong)]">It fled!</p>
-          <p className="text-sm text-muted-foreground">You hesitated too long…</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Failed: wrong move ────────────────────────────────────────────────────
-
-  if (phase === "failed_wrong") {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 space-y-5">
-        <img
-          src={pokemon.spriteUrl}
-          alt={pokemon.name}
-          className="w-32 h-32 object-contain opacity-40 grayscale"
-        />
-        <div className="text-center space-y-2">
-          <p className="text-2xl font-bold text-[var(--tile-wrong)]">It broke free!</p>
-          <p className="text-sm text-muted-foreground">
-            {chosenMove?.isTrap
-              ? `${chosenMove.name} did nothing — it's a status move!`
-              : `${chosenMove?.name} wasn't very effective…`}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Wiggling ──────────────────────────────────────────────────────────────
-
-  if (phase === "wiggling") {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 space-y-6">
-        <p className="text-sm text-muted-foreground font-medium tracking-wide uppercase">
-          Gotcha? Gotcha? Gotcha?
-        </p>
-        <div
-          key={wiggleCount}
-          style={{ animation: "pokeball-wiggle 0.8s ease-in-out" }}
-        >
-          <Pokeball />
-        </div>
-        <p className="text-sm text-muted-foreground">{chosenMove?.name}</p>
-      </div>
-    );
-  }
-
-  // ── Choosing ──────────────────────────────────────────────────────────────
+  // ── Render (single wrapper so ref is always attached) ────────────────────
 
   const timerPct = (timeLeft / CATCH_TIMER) * 100;
   const timerColor =
@@ -406,66 +320,150 @@ export function CatchPhase({ pokemon, onCatchComplete }: CatchPhaseProps) {
       : "bg-[var(--tile-wrong)]";
 
   return (
-    <div className="flex flex-col items-center space-y-5 py-4">
-      <div className="text-center space-y-0.5">
-        <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
-          A wild Pokémon appeared!
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Choose the right move to catch it
-        </p>
-      </div>
+    <div ref={containerRef}>
 
-      {/* Pokemon image only — no name, no types */}
-      <img
-        src={pokemon.spriteUrl}
-        alt="Wild Pokémon"
-        className="w-36 h-36 object-contain"
-        style={{ imageRendering: "pixelated" }}
-      />
-
-      {/* Countdown timer */}
-      <div className="w-full space-y-1.5">
-        <div className="flex justify-between items-center text-xs text-muted-foreground px-0.5">
-          <span>Time remaining</span>
-          <span
-            className={`font-mono font-bold tabular-nums text-sm ${
-              timeLeft <= 2 ? "text-[var(--tile-wrong)]" : "text-foreground"
-            }`}
-          >
-            {timeLeft}s
-          </span>
+      {/* Loading */}
+      {phase === "loading" && (
+        <div className="flex flex-col items-center justify-center py-16 space-y-4">
+          <div className="w-8 h-8 border-2 border-border border-t-[var(--tile-correct)] rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">A wild Pokémon appeared…</p>
         </div>
-        <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-1000 ease-linear ${timerColor}`}
-            style={{ width: `${timerPct}%` }}
+      )}
+
+      {/* Caught */}
+      {phase === "caught" && (
+        <div className="flex flex-col items-center justify-center py-10 space-y-5 animate-fade-in">
+          <div className="text-5xl animate-bounce">🎉</div>
+          <Pokeball />
+          <div className="text-center space-y-1">
+            <p className="text-3xl font-bold tracking-tight text-[var(--tile-correct)]">
+              Gotcha!
+            </p>
+            <p className="text-muted-foreground capitalize">
+              {pokemon.name.replace(/-/g, " ")} was caught!
+            </p>
+          </div>
+          <div className="rounded-full px-3 py-1 bg-[var(--tile-correct)] text-[var(--tile-correct-foreground)] text-xs font-medium">
+            {chosenMove?.name}
+          </div>
+        </div>
+      )}
+
+      {/* Failed: time ran out */}
+      {phase === "failed_time" && (
+        <div className="flex flex-col items-center justify-center py-10 space-y-5">
+          <img
+            src={pokemon.spriteUrl}
+            alt={pokemon.name}
+            className="w-32 h-32 object-contain opacity-40 grayscale"
           />
+          <div className="text-center space-y-1">
+            <p className="text-2xl font-bold text-[var(--tile-wrong)]">It fled!</p>
+            <p className="text-sm text-muted-foreground">You hesitated too long…</p>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Move buttons */}
-      <div className="grid grid-cols-2 gap-2 w-full">
-        {moves.map((move) => (
-          <button
-            key={move.name}
-            onClick={() => handleMoveClick(move)}
-            className="
-              flex flex-col items-start gap-1 rounded-md border border-border
-              bg-card hover:bg-accent active:scale-95
-              px-3 py-2.5 text-left transition-all duration-100
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
-            "
+      {/* Failed: wrong move */}
+      {phase === "failed_wrong" && (
+        <div className="flex flex-col items-center justify-center py-10 space-y-5">
+          <img
+            src={pokemon.spriteUrl}
+            alt={pokemon.name}
+            className="w-32 h-32 object-contain opacity-40 grayscale"
+          />
+          <div className="text-center space-y-2">
+            <p className="text-2xl font-bold text-[var(--tile-wrong)]">It broke free!</p>
+            <p className="text-sm text-muted-foreground">
+              {chosenMove?.isTrap
+                ? `${chosenMove.name} did nothing — it's a status move!`
+                : `${chosenMove?.name} wasn't very effective…`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Wiggling */}
+      {phase === "wiggling" && (
+        <div className="flex flex-col items-center justify-center py-10 space-y-6">
+          <p className="text-sm text-muted-foreground font-medium tracking-wide uppercase">
+            Gotcha? Gotcha? Gotcha?
+          </p>
+          <div
+            key={wiggleCount}
+            style={{ animation: "pokeball-wiggle 0.8s ease-in-out" }}
           >
-            <span className="font-semibold text-sm leading-tight">{move.name}</span>
-            <span
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide text-white ${typeColor(move.type)}`}
-            >
-              {move.type}
-            </span>
-          </button>
-        ))}
-      </div>
+            <Pokeball />
+          </div>
+          <p className="text-sm text-muted-foreground">{chosenMove?.name}</p>
+        </div>
+      )}
+
+      {/* Choosing */}
+      {phase === "choosing" && (
+        <div className="flex flex-col items-center space-y-5 py-4">
+          <div className="text-center space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
+              A wild Pokémon appeared!
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Choose the right move to catch it
+            </p>
+          </div>
+
+          {/* Pokemon image only — no name, no types */}
+          <img
+            src={pokemon.spriteUrl}
+            alt="Wild Pokémon"
+            className="w-36 h-36 object-contain"
+            style={{ imageRendering: "pixelated" }}
+          />
+
+          {/* Countdown timer */}
+          <div className="w-full space-y-1.5">
+            <div className="flex justify-between items-center text-xs text-muted-foreground px-0.5">
+              <span>Time remaining</span>
+              <span
+                className={`font-mono font-bold tabular-nums text-sm ${
+                  timeLeft <= 2 ? "text-[var(--tile-wrong)]" : "text-foreground"
+                }`}
+              >
+                {timeLeft}s
+              </span>
+            </div>
+            <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ease-linear ${timerColor}`}
+                style={{ width: `${timerPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Move buttons */}
+          <div className="grid grid-cols-2 gap-2 w-full">
+            {moves.map((move) => (
+              <button
+                key={move.name}
+                onClick={() => handleMoveClick(move)}
+                className="
+                  flex flex-col items-start gap-1 rounded-md border border-border
+                  bg-card hover:bg-accent active:scale-95
+                  px-3 py-2.5 text-left transition-all duration-100
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                "
+              >
+                <span className="font-semibold text-sm leading-tight">{move.name}</span>
+                <span
+                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide text-white ${typeColor(move.type)}`}
+                >
+                  {move.type}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
