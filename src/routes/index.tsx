@@ -149,7 +149,7 @@ function GamePage() {
       )}
 
       <div className="space-y-3">
-        {results.map((r, i) => (
+        {[...results].reverse().map((r, i) => (
           <GuessRow key={i} result={r} />
         ))}
         {!finished &&
