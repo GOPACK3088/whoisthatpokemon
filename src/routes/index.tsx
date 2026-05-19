@@ -24,11 +24,11 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/")({
   component: GamePage,
   head: () => ({
-    meta: [
-      { title: "PokéCatch — Daily Pokémon Guessing Game" },
-    ],
+    meta: [{ title: "PokéCatch — Daily Pokémon Guessing Game" }],
   }),
 });
+
+// ─── Countdown ────────────────────────────────────────────────────────────────
 
 function Countdown() {
   const [ms, setMs] = useState(msUntilNextPuzzle());
@@ -46,6 +46,8 @@ function Countdown() {
   );
 }
 
+// ─── Welcome modal ────────────────────────────────────────────────────────────
+
 function WelcomeModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -55,35 +57,46 @@ function WelcomeModal({ onClose }: { onClose: () => void }) {
           <h2 className="text-xl font-bold text-white">How to Play PokéCatch</h2>
           <p className="text-sm text-zinc-400">Two phases, one mystery Pokémon.</p>
         </div>
-
         <div className="space-y-4">
           <div className="flex gap-3">
-            <div className="shrink-0 w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400 font-bold text-sm">1</div>
+            <div className="shrink-0 w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400 font-bold text-sm">
+              1
+            </div>
             <div>
               <div className="font-semibold text-white text-sm">Guess the Pokémon</div>
-              <div className="text-xs text-zinc-400 mt-0.5">You get {MAX_GUESSES} guesses. After each one, a color-coded grid reveals how close you are across 7 attributes — type, generation, color, height, weight, and evolution stage.</div>
+              <div className="text-xs text-zinc-400 mt-0.5">
+                You get {MAX_GUESSES} guesses. After each one, a color-coded grid reveals how close
+                you are across 7 attributes — type, generation, color, height, weight, and evolution
+                stage.
+              </div>
             </div>
           </div>
           <div className="flex gap-3">
-            <div className="shrink-0 w-8 h-8 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 font-bold text-sm">2</div>
+            <div className="shrink-0 w-8 h-8 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 font-bold text-sm">
+              2
+            </div>
             <div>
               <div className="font-semibold text-white text-sm">Catch it with the right move</div>
-              <div className="text-xs text-zinc-400 mt-0.5">Once you identify the Pokémon, you enter the catch phase. Pick the right move to successfully catch it — type matchups matter!</div>
+              <div className="text-xs text-zinc-400 mt-0.5">
+                Once you identify the Pokémon, you enter the catch phase. Pick the right move to
+                successfully catch it — type matchups matter!
+              </div>
             </div>
           </div>
         </div>
-
         <div className="flex gap-3 items-start rounded-xl bg-zinc-800 border border-zinc-700 p-3">
           <div className="text-2xl">🏆</div>
           <div className="text-xs text-zinc-300">
             <span className="font-semibold text-white">Track your progress.</span>{" "}
-            <Link to="/login" className="text-yellow-400 underline underline-offset-2 hover:text-yellow-300">
+            <Link
+              to="/login"
+              className="text-yellow-400 underline underline-offset-2 hover:text-yellow-300"
+            >
               Sign up for free
             </Link>{" "}
             to save your streak, build your personal Pokédex, and compete on the leaderboard.
           </div>
         </div>
-
         <Button className="w-full" onClick={onClose}>
           Let's go! 🚀
         </Button>
@@ -91,6 +104,76 @@ function WelcomeModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
+
+// ─── Hint bar ─────────────────────────────────────────────────────────────────
+
+interface HintBarProps {
+  guessCount: number;
+  hint1Used: boolean;
+  hint2Used: boolean;
+  hint1Value: string | null;
+  hint2Value: string | null;
+  hint2Loading: boolean;
+  onUseHint1: () => void;
+  onUseHint2: () => void;
+}
+
+function HintBar({
+  guessCount,
+  hint1Used,
+  hint2Used,
+  hint1Value,
+  hint2Value,
+  hint2Loading,
+  onUseHint1,
+  onUseHint2,
+}: HintBarProps) {
+  const showHint1 = guessCount >= 5;
+  const showHint2 = guessCount >= 9;
+  if (!showHint1 && !showHint2) return null;
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {showHint1 &&
+        (hint1Used ? (
+          <div className="flex items-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1.5 text-sm">
+            <span className="text-yellow-400">💡</span>
+            <span className="text-yellow-300 font-medium">Gen {hint1Value}</span>
+            <span className="text-zinc-500 text-xs ml-1">generation</span>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
+            onClick={onUseHint1}
+          >
+            💡 Hint 1 — Generation
+          </Button>
+        ))}
+      {showHint2 &&
+        (hint2Used ? (
+          <div className="flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-sm">
+            <span className="text-blue-400">🌿</span>
+            <span className="text-blue-300 font-medium capitalize">
+              {hint2Loading ? "Loading…" : (hint2Value ?? "Unknown")}
+            </span>
+            <span className="text-zinc-500 text-xs ml-1">habitat</span>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-blue-500/40 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+            onClick={onUseHint2}
+          >
+            🌿 Hint 2 — Habitat
+          </Button>
+        ))}
+    </div>
+  );
+}
+
+// ─── Game page ────────────────────────────────────────────────────────────────
 
 function GamePage() {
   const date = todayKey();
@@ -103,14 +186,21 @@ function GamePage() {
   const [won, setWon] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [catchPhaseActive, setCatchPhaseActive] = useState(false);
-  const [catchResult, setCatchResult] = useState<{ caught: boolean; moveChosen: string } | null>(null);
+  const [catchResult, setCatchResult] = useState<{ caught: boolean; moveChosen: string } | null>(
+    null,
+  );
   const [showWelcome, setShowWelcome] = useState(false);
+
+  // Hint state
+  const [hint1Used, setHint1Used] = useState(false);
+  const [hint2Used, setHint2Used] = useState(false);
+  const [hint1Value, setHint1Value] = useState<string | null>(null);
+  const [hint2Value, setHint2Value] = useState<string | null>(null);
+  const [hint2Loading, setHint2Loading] = useState(false);
 
   // Show welcome modal on first ever visit
   useEffect(() => {
-    if (!localStorage.getItem("pokecatch_welcomed")) {
-      setShowWelcome(true);
-    }
+    if (!localStorage.getItem("pokecatch_welcomed")) setShowWelcome(true);
   }, []);
 
   function dismissWelcome() {
@@ -122,14 +212,20 @@ function GamePage() {
   useEffect(() => {
     const { daily } = loadState();
     if (daily && daily.date === date) {
-      setGuessIds(daily.guesses);
-      setFinished(daily.finished);
-      setWon(daily.won);
-      setSubmitted(daily.submitted);
-      // If already finished and won, catch phase is already done (page reload)
-      if (daily.finished && daily.won) {
-        setCatchResult(daily.catchResult ?? { caught: false, moveChosen: "" });
-      }
+      const d = daily as typeof daily & {
+        catchResult?: { caught: boolean; moveChosen: string };
+        hint1Used?: boolean;
+        hint2Used?: boolean;
+        hint1Value?: string | null;
+        hint2Value?: string | null;
+      };
+      setGuessIds(d.guesses);
+      setFinished(d.finished);
+      setWon(d.won);
+      setSubmitted(d.submitted);
+      if (d.finished && d.won) setCatchResult(d.catchResult ?? { caught: false, moveChosen: "" });
+      if (d.hint1Used) { setHint1Used(true); setHint1Value(d.hint1Value ?? null); }
+      if (d.hint2Used) { setHint2Used(true); setHint2Value(d.hint2Value ?? null); }
     }
   }, [date]);
 
@@ -145,23 +241,63 @@ function GamePage() {
   // Sync to server when finished and signed in
   useEffect(() => {
     if (!finished || submitted || !user) return;
-    submitFn({
-      data: {
-        puzzleDate: date,
-        guessesUsed: guessIds.length,
-        won,
-      },
-    })
+    submitFn({ data: { puzzleDate: date, guessesUsed: guessIds.length, won } })
       .then(() => {
         setSubmitted(true);
         const state = loadState();
-        if (state.daily) {
-          state.daily.submitted = true;
-          saveState(state);
-        }
+        if (state.daily) { state.daily.submitted = true; saveState(state); }
       })
       .catch((e) => console.error("Sync failed:", e));
   }, [finished, submitted, user, submitFn, date, guessIds.length, won]);
+
+  // ── Hint helpers ──────────────────────────────────────────────────────────
+
+  function persistHints(
+    h1Used: boolean,
+    h1Val: string | null,
+    h2Used: boolean,
+    h2Val: string | null,
+  ) {
+    const state = loadState();
+    if (state.daily) {
+      Object.assign(state.daily, {
+        hint1Used: h1Used,
+        hint1Value: h1Val,
+        hint2Used: h2Used,
+        hint2Value: h2Val,
+      });
+      saveState(state);
+    }
+  }
+
+  function handleUseHint1() {
+    const val = String(answer.generation);
+    setHint1Used(true);
+    setHint1Value(val);
+    persistHints(true, val, hint2Used, hint2Value);
+  }
+
+  async function handleUseHint2() {
+    setHint2Used(true);
+    setHint2Loading(true);
+    let habitat: string | null = null;
+    try {
+      const res = await fetch(
+        `https://pokeapi.co/api/v2/pokemon-species/${answer.name.toLowerCase()}/`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        habitat = data.habitat?.name ?? null;
+      }
+    } catch {
+      habitat = null;
+    }
+    setHint2Value(habitat);
+    setHint2Loading(false);
+    persistHints(hint1Used, hint1Value, true, habitat);
+  }
+
+  // ── Guess handler ─────────────────────────────────────────────────────────
 
   function handleGuess(p: Pokemon) {
     if (finished) return;
@@ -169,58 +305,41 @@ function GamePage() {
     const isWin = p.id === answer.id;
     const isDone = isWin || newIds.length >= MAX_GUESSES;
     setGuessIds(newIds);
-    if (isDone) {
-      setFinished(true);
-      setWon(isWin);
-      if (isWin) {
-        // Trigger catch phase before showing results
-        setCatchPhaseActive(true);
-      }
-    }
-
+    if (isDone) { setFinished(true); setWon(isWin); if (isWin) setCatchPhaseActive(true); }
     const state = loadState();
-    const daily = {
-      date,
-      guesses: newIds,
-      finished: isDone,
-      won: isWin,
-      submitted: false,
-      catchResult: null,
-    };
+    const daily = Object.assign(
+      { date, guesses: newIds, finished: isDone, won: isWin, submitted: false, catchResult: null },
+      { hint1Used, hint1Value, hint2Used, hint2Value },
+    );
     const stats = isDone
       ? applyResultToStats(state.stats, isWin, newIds.length, date)
       : state.stats;
     saveState({ daily, stats });
   }
 
+  // ── Catch complete ────────────────────────────────────────────────────────
+
   async function handleCatchComplete(caught: boolean, moveChosen: string) {
     const result = { caught, moveChosen };
     setCatchResult(result);
     setCatchPhaseActive(false);
-    // Persist catch result to localStorage
     const state = loadState();
-    if (state.daily) {
-      (state.daily as typeof state.daily & { catchResult: typeof result }).catchResult = result;
-      saveState(state);
-    }
-    // Persist to Supabase if caught and signed in
+    if (state.daily) { Object.assign(state.daily, { catchResult: result }); saveState(state); }
     if (caught && user) {
-      const { error } = await supabase
-        .from("caught_pokemon")
-        .upsert(
-          {
-            user_id: user.id,
-            pokemon_id: answer.id,
-            pokemon_name: answer.name,
-            caught_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,pokemon_id" },
-        );
-      if (error) {
-        console.error("Failed to save caught Pok\u00e9mon:", error);
-      }
+      const { error } = await supabase.from("caught_pokemon").upsert(
+        {
+          user_id: user.id,
+          pokemon_id: answer.id,
+          pokemon_name: answer.name,
+          caught_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,pokemon_id" },
+      );
+      if (error) console.error("Failed to save caught Pokémon:", error);
     }
   }
+
+  // ── Share ─────────────────────────────────────────────────────────────────
 
   function handleShare() {
     const grid = emojiGrid(results);
@@ -230,7 +349,7 @@ function GamePage() {
         ? `🎯 Caught with ${catchResult.moveChosen}!`
         : `💨 It got away…`
       : "";
-    const text = `Pokédle ${date} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
+    const text = `PokéCatch ${date} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {});
     } else {
@@ -241,9 +360,27 @@ function GamePage() {
 
   const empties = finished ? 0 : Math.min(3, MAX_GUESSES - guesses.length);
 
+  // ── Catch phase: full-screen takeover ─────────────────────────────────────
+  // When the catch phase is active, render ONLY the catch UI — no input,
+  // no guess rows, no empty slots. It appears at the very top of the page.
+
+  if (catchPhaseActive && won) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-6">
+        {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <CatchPhase pokemon={answer} onCatchComplete={handleCatchComplete} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal game view ──────────────────────────────────────────────────────
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
       {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
+
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold tracking-tight text-white">Daily PokéCatch</h1>
         <p className="text-sm text-muted-foreground">
@@ -253,6 +390,20 @@ function GamePage() {
 
       {!finished && (
         <GuessInput onGuess={handleGuess} excludeIds={guessIds} disabled={finished} />
+      )}
+
+      {/* Hint bar — only visible during active play */}
+      {!finished && (
+        <HintBar
+          guessCount={guessIds.length}
+          hint1Used={hint1Used}
+          hint2Used={hint2Used}
+          hint1Value={hint1Value}
+          hint2Value={hint2Value}
+          hint2Loading={hint2Loading}
+          onUseHint1={handleUseHint1}
+          onUseHint2={handleUseHint2}
+        />
       )}
 
       <div className="space-y-2">
@@ -275,13 +426,6 @@ function GamePage() {
           ))}
       </div>
 
-      {/* Catch phase — shown after a correct guess, before the results card */}
-      {catchPhaseActive && won && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <CatchPhase pokemon={answer} onCatchComplete={handleCatchComplete} />
-        </div>
-      )}
-
       {finished && !catchPhaseActive && (
         <div className="rounded-xl border border-border bg-card p-6 text-center space-y-3">
           <img
@@ -293,7 +437,9 @@ function GamePage() {
             <div className="text-sm text-muted-foreground uppercase tracking-wide">
               {won ? "You got it!" : "Today's Pokémon was"}
             </div>
-            <div className="text-2xl font-bold capitalize text-white">{answer.name.replace(/-/g, " ")}</div>
+            <div className="text-2xl font-bold capitalize text-white">
+              {answer.name.replace(/-/g, " ")}
+            </div>
             <div className="text-sm text-muted-foreground mt-1">
               {won ? `Solved in ${guessIds.length}/${MAX_GUESSES}` : `Better luck tomorrow!`}
             </div>
@@ -305,9 +451,7 @@ function GamePage() {
                   🎯 Caught with {catchResult.moveChosen}!
                 </span>
               ) : (
-                <span className="text-muted-foreground">
-                  💨 It got away…
-                </span>
+                <span className="text-muted-foreground">💨 It got away…</span>
               )}
             </div>
           )}
