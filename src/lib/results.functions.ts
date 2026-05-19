@@ -129,19 +129,16 @@ export const getMyStats = createServerFn({ method: "GET" })
   });
 
 // ─── getLeaderboard ───────────────────────────────────────────────────────────
-// Public — no auth required. Returns:
-//   leaderboard: all-time per-player stats, unsorted (client handles sorting)
-//   todayStats:  today's aggregate snapshot for the summary boxes
 
 export const getLeaderboard = createServerFn({ method: "GET" }).handler(async () => {
   const db = anonClient();
   const today = new Date().toISOString().slice(0, 10);
 
   const [
-    { data: statsRows },
-    { data: caughtRows },
-    { data: profiles },
-    { data: todayResults },
+    { data: statsRows,   error: statsErr   },
+    { data: caughtRows,  error: caughtErr  },
+    { data: profiles,    error: profileErr },
+    { data: todayResults,error: todayErr   },
   ] = await Promise.all([
     db.from("user_stats").select("user_id, total_played, total_won, current_streak, max_streak"),
     db.from("caught_pokemon").select("user_id"),
@@ -149,24 +146,43 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
     db.from("daily_results").select("user_id, guesses_used, won").eq("puzzle_date", today),
   ]);
 
-  const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
+  // ── Debug: log every query result to server stdout ──────────────────────
+  console.log("[leaderboard] today:", today);
+  console.log("[leaderboard] statsRows count:", statsRows?.length ?? "null", "| error:", statsErr?.message ?? "none");
+  console.log("[leaderboard] statsRows data:", JSON.stringify(statsRows));
+  console.log("[leaderboard] caughtRows count:", caughtRows?.length ?? "null", "| error:", caughtErr?.message ?? "none");
+  console.log("[leaderboard] caughtRows data:", JSON.stringify(caughtRows));
+  console.log("[leaderboard] profiles count:", profiles?.length ?? "null", "| error:", profileErr?.message ?? "none");
+  console.log("[leaderboard] profiles data:", JSON.stringify(profiles));
+  console.log("[leaderboard] todayResults count:", todayResults?.length ?? "null", "| error:", todayErr?.message ?? "none");
+  console.log("[leaderboard] todayResults data:", JSON.stringify(todayResults));
 
-  // Count total caught per user
+  // ── Build lookup maps ────────────────────────────────────────────────────
+
+  // profiles keyed by id — used to join display name onto stats rows
+  const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
+  console.log("[leaderboard] nameMap entries:", [...nameMap.entries()]);
+
+  // Count caught per user
   const caughtByUser = new Map<string, number>();
   for (const row of caughtRows ?? []) {
     caughtByUser.set(row.user_id, (caughtByUser.get(row.user_id) ?? 0) + 1);
   }
+  console.log("[leaderboard] caughtByUser entries:", [...caughtByUser.entries()]);
 
-  // Build all-time leaderboard rows — client will handle sorting
+  // ── Build leaderboard rows ───────────────────────────────────────────────
   const leaderboard = (statsRows ?? []).map((s) => {
     const totalCaught = caughtByUser.get(s.user_id) ?? 0;
     const guessSuccessRate =
-      s.total_played > 0 ? Math.round((s.total_won / s.total_played) * 100) : 0;
-    // Catch rate: caught Pokémon / puzzles won (how often they convert a solve into a catch)
+      (s.total_played ?? 0) > 0
+        ? Math.round(((s.total_won ?? 0) / (s.total_played ?? 1)) * 100)
+        : 0;
     const catchRate =
-      s.total_won > 0 ? Math.round((totalCaught / s.total_won) * 100) : 0;
+      (s.total_won ?? 0) > 0
+        ? Math.round((totalCaught / (s.total_won ?? 1)) * 100)
+        : 0;
 
-    return {
+    const row = {
       user_id: s.user_id,
       display_name: nameMap.get(s.user_id) ?? "Player",
       total_played: s.total_played ?? 0,
@@ -177,18 +193,29 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
       current_streak: s.current_streak ?? 0,
       max_streak: s.max_streak ?? 0,
     };
+
+    console.log(
+      `[leaderboard] player ${s.user_id}: display_name="${row.display_name}" total_played=${row.total_played} total_won=${row.total_won} total_caught=${row.total_caught} guess_rate=${row.guess_success_rate}% catch_rate=${row.catch_rate}%`,
+    );
+
+    return row;
   });
 
-  // Today's aggregate stats for summary boxes
+  // ── Today stats ──────────────────────────────────────────────────────────
   const wonToday = (todayResults ?? []).filter((r) => r.won);
   const todayStats = {
     players: todayResults?.length ?? 0,
     solved: wonToday.length,
     avgGuesses:
       wonToday.length > 0
-        ? Math.round((wonToday.reduce((s, r) => s + r.guesses_used, 0) / wonToday.length) * 10) / 10
+        ? Math.round(
+            (wonToday.reduce((s, r) => s + r.guesses_used, 0) / wonToday.length) * 10,
+          ) / 10
         : null,
   };
+
+  console.log("[leaderboard] todayStats:", todayStats);
+  console.log("[leaderboard] leaderboard rows:", leaderboard.length);
 
   return { leaderboard, todayStats };
 });
