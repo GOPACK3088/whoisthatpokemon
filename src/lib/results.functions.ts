@@ -43,11 +43,8 @@ export const submitDailyResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    // Derive the slot from the current todayKey so it matches what the
-    // client is displaying (am = 08:00–19:59 ET, pm = 20:00–07:59 ET).
     const slot = slotFromKey(todayKey());
 
-    // Insert result; ignore if already exists for this date+slot
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
       puzzle_date: data.puzzleDate,
@@ -60,7 +57,6 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       throw new Error(insertErr.message);
     }
     if (insertErr) {
-      // Already submitted for this date+slot — return current stats
       const { data: stats } = await supabase
         .from("user_stats")
         .select("*")
@@ -69,7 +65,6 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       return { stats, alreadySubmitted: true };
     }
 
-    // Fetch existing stats
     const { data: existing } = await supabase
       .from("user_stats")
       .select("*")
@@ -134,9 +129,9 @@ export const getMyStats = createServerFn({ method: "GET" })
   });
 
 // ─── getLeaderboard ───────────────────────────────────────────────────────────
-// Public — no auth required. Uses the anon key which respects Supabase RLS.
-// Returns per-player: guess success rate, catch rate, total caught.
-// Sorted by total_caught descending.
+// Public — no auth required. Returns:
+//   leaderboard: all-time per-player stats, unsorted (client handles sorting)
+//   todayStats:  today's aggregate snapshot for the summary boxes
 
 export const getLeaderboard = createServerFn({ method: "GET" }).handler(async () => {
   const db = anonClient();
@@ -148,75 +143,52 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
     { data: profiles },
     { data: todayResults },
   ] = await Promise.all([
-    // user_stats for every player (success rate denominator)
-    db
-      .from("user_stats")
-      .select("user_id, total_played, total_won, current_streak, max_streak"),
-
-    // caught_pokemon: one row per user per pokemon — aggregate in JS
+    db.from("user_stats").select("user_id, total_played, total_won, current_streak, max_streak"),
     db.from("caught_pokemon").select("user_id"),
-
-    // display names
     db.from("profiles").select("id, display_name"),
-
-    // today's puzzle results for today-stats widget
     db.from("daily_results").select("user_id, guesses_used, won").eq("puzzle_date", today),
   ]);
 
-  // Build lookup maps
   const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
 
-  // Count caught per user
+  // Count total caught per user
   const caughtByUser = new Map<string, number>();
   for (const row of caughtRows ?? []) {
     caughtByUser.set(row.user_id, (caughtByUser.get(row.user_id) ?? 0) + 1);
   }
 
-  // Build leaderboard rows
-  const rows = (statsRows ?? []).map((s) => {
+  // Build all-time leaderboard rows — client will handle sorting
+  const leaderboard = (statsRows ?? []).map((s) => {
     const totalCaught = caughtByUser.get(s.user_id) ?? 0;
     const guessSuccessRate =
-      s.total_played > 0
-        ? Math.round((s.total_won / s.total_played) * 100)
-        : 0;
-    // Catch rate: of the puzzles they won, how many did they also catch?
+      s.total_played > 0 ? Math.round((s.total_won / s.total_played) * 100) : 0;
+    // Catch rate: caught Pokémon / puzzles won (how often they convert a solve into a catch)
     const catchRate =
-      s.total_won > 0
-        ? Math.round((totalCaught / s.total_won) * 100)
-        : 0;
+      s.total_won > 0 ? Math.round((totalCaught / s.total_won) * 100) : 0;
 
     return {
       user_id: s.user_id,
       display_name: nameMap.get(s.user_id) ?? "Player",
-      total_played: s.total_played,
-      total_won: s.total_won,
+      total_played: s.total_played ?? 0,
+      total_won: s.total_won ?? 0,
       total_caught: totalCaught,
       guess_success_rate: guessSuccessRate,
       catch_rate: catchRate,
-      current_streak: s.current_streak,
-      max_streak: s.max_streak,
+      current_streak: s.current_streak ?? 0,
+      max_streak: s.max_streak ?? 0,
     };
   });
 
-  // Sort by total_caught desc, break ties by guess_success_rate desc
-  rows.sort((a, b) =>
-    b.total_caught !== a.total_caught
-      ? b.total_caught - a.total_caught
-      : b.guess_success_rate - a.guess_success_rate,
-  );
-
-  // Today's aggregate stats (shown at top of leaderboard page)
+  // Today's aggregate stats for summary boxes
   const wonToday = (todayResults ?? []).filter((r) => r.won);
   const todayStats = {
     players: todayResults?.length ?? 0,
     solved: wonToday.length,
     avgGuesses:
       wonToday.length > 0
-        ? Math.round(
-            (wonToday.reduce((s, r) => s + r.guesses_used, 0) / wonToday.length) * 10,
-          ) / 10
+        ? Math.round((wonToday.reduce((s, r) => s + r.guesses_used, 0) / wonToday.length) * 10) / 10
         : null,
   };
 
-  return { leaderboard: rows, todayStats };
+  return { leaderboard, todayStats };
 });
