@@ -1,12 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
+import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { todayKey } from "@/lib/pokemon";
+import type { Database } from "@/integrations/supabase/types";
 
-const submitInput = z.object({
-  puzzleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  guessesUsed: z.number().int().min(1).max(7),
-  won: z.boolean(),
-});
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isYesterday(prev: string, today: string): boolean {
   const p = new Date(prev + "T00:00:00Z");
@@ -14,24 +13,54 @@ function isYesterday(prev: string, today: string): boolean {
   return t.getTime() - p.getTime() === 86400000;
 }
 
+/** Parse the slot ("am" | "pm") out of a todayKey string like "2026-05-19-am" */
+function slotFromKey(key: string): "am" | "pm" {
+  const suffix = key.split("-").at(-1);
+  return suffix === "pm" ? "pm" : "am";
+}
+
+/** Anon Supabase client for public (unauthenticated) server-side reads. */
+function anonClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars");
+  return createClient<Database>(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+// ─── submitDailyResult ────────────────────────────────────────────────────────
+
+const submitInput = z.object({
+  puzzleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  guessesUsed: z.number().int().min(1).max(10),
+  won: z.boolean(),
+});
+
 export const submitDailyResult = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => submitInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    // Insert result; ignore if already exists for today
+    // Derive the slot from the current todayKey so it matches what the
+    // client is displaying (am = 08:00–19:59 ET, pm = 20:00–07:59 ET).
+    const slot = slotFromKey(todayKey());
+
+    // Insert result; ignore if already exists for this date+slot
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
       puzzle_date: data.puzzleDate,
+      slot,
       guesses_used: data.guessesUsed,
       won: data.won,
     });
+
     if (insertErr && !insertErr.message.includes("duplicate")) {
       throw new Error(insertErr.message);
     }
     if (insertErr) {
-      // Already submitted for today - return current stats
+      // Already submitted for this date+slot — return current stats
       const { data: stats } = await supabase
         .from("user_stats")
         .select("*")
@@ -48,7 +77,8 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       .maybeSingle();
 
     const dist = (existing?.guess_distribution as Record<string, number>) ?? {
-      "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0,
+      "1": 0, "2": 0, "3": 0, "4": 0, "5": 0,
+      "6": 0, "7": 0, "8": 0, "9": 0, "10": 0,
     };
     if (data.won) dist[String(data.guessesUsed)] = (dist[String(data.guessesUsed)] ?? 0) + 1;
 
@@ -84,6 +114,8 @@ export const submitDailyResult = createServerFn({ method: "POST" })
     return { stats: saved, alreadySubmitted: false };
   });
 
+// ─── getMyStats ───────────────────────────────────────────────────────────────
+
 export const getMyStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -101,41 +133,90 @@ export const getMyStats = createServerFn({ method: "GET" })
     return { stats, results: results ?? [], profile };
   });
 
-export const getLeaderboard = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase } = context;
-    const today = new Date().toISOString().slice(0, 10);
+// ─── getLeaderboard ───────────────────────────────────────────────────────────
+// Public — no auth required. Uses the anon key which respects Supabase RLS.
+// Returns per-player: guess success rate, catch rate, total caught.
+// Sorted by total_caught descending.
 
-    const [{ data: topStreaks }, { data: todayResults }, { data: profiles }] = await Promise.all([
-      supabase
-        .from("user_stats")
-        .select("user_id, current_streak, max_streak, total_won, total_played")
-        .order("max_streak", { ascending: false })
-        .limit(20),
-      supabase
-        .from("daily_results")
-        .select("user_id, guesses_used, won")
-        .eq("puzzle_date", today),
-      supabase.from("profiles").select("id, display_name"),
-    ]);
+export const getLeaderboard = createServerFn({ method: "GET" }).handler(async () => {
+  const db = anonClient();
+  const today = new Date().toISOString().slice(0, 10);
 
-    const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
-    const todayStats = {
-      players: todayResults?.length ?? 0,
-      solved: todayResults?.filter((r) => r.won).length ?? 0,
-      avgGuesses:
-        todayResults && todayResults.filter((r) => r.won).length > 0
-          ? todayResults.filter((r) => r.won).reduce((s, r) => s + r.guesses_used, 0) /
-            todayResults.filter((r) => r.won).length
-          : null,
-    };
+  const [
+    { data: statsRows },
+    { data: caughtRows },
+    { data: profiles },
+    { data: todayResults },
+  ] = await Promise.all([
+    // user_stats for every player (success rate denominator)
+    db
+      .from("user_stats")
+      .select("user_id, total_played, total_won, current_streak, max_streak"),
+
+    // caught_pokemon: one row per user per pokemon — aggregate in JS
+    db.from("caught_pokemon").select("user_id"),
+
+    // display names
+    db.from("profiles").select("id, display_name"),
+
+    // today's puzzle results for today-stats widget
+    db.from("daily_results").select("user_id, guesses_used, won").eq("puzzle_date", today),
+  ]);
+
+  // Build lookup maps
+  const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
+
+  // Count caught per user
+  const caughtByUser = new Map<string, number>();
+  for (const row of caughtRows ?? []) {
+    caughtByUser.set(row.user_id, (caughtByUser.get(row.user_id) ?? 0) + 1);
+  }
+
+  // Build leaderboard rows
+  const rows = (statsRows ?? []).map((s) => {
+    const totalCaught = caughtByUser.get(s.user_id) ?? 0;
+    const guessSuccessRate =
+      s.total_played > 0
+        ? Math.round((s.total_won / s.total_played) * 100)
+        : 0;
+    // Catch rate: of the puzzles they won, how many did they also catch?
+    const catchRate =
+      s.total_won > 0
+        ? Math.round((totalCaught / s.total_won) * 100)
+        : 0;
 
     return {
-      topStreaks: (topStreaks ?? []).map((s) => ({
-        ...s,
-        display_name: nameMap.get(s.user_id) ?? "Player",
-      })),
-      todayStats,
+      user_id: s.user_id,
+      display_name: nameMap.get(s.user_id) ?? "Player",
+      total_played: s.total_played,
+      total_won: s.total_won,
+      total_caught: totalCaught,
+      guess_success_rate: guessSuccessRate,
+      catch_rate: catchRate,
+      current_streak: s.current_streak,
+      max_streak: s.max_streak,
     };
   });
+
+  // Sort by total_caught desc, break ties by guess_success_rate desc
+  rows.sort((a, b) =>
+    b.total_caught !== a.total_caught
+      ? b.total_caught - a.total_caught
+      : b.guess_success_rate - a.guess_success_rate,
+  );
+
+  // Today's aggregate stats (shown at top of leaderboard page)
+  const wonToday = (todayResults ?? []).filter((r) => r.won);
+  const todayStats = {
+    players: todayResults?.length ?? 0,
+    solved: wonToday.length,
+    avgGuesses:
+      wonToday.length > 0
+        ? Math.round(
+            (wonToday.reduce((s, r) => s + r.guesses_used, 0) / wonToday.length) * 10,
+          ) / 10
+        : null,
+  };
+
+  return { leaderboard: rows, todayStats };
+});
