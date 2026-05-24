@@ -68,6 +68,33 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_puzzles: {
+        Row: {
+          created_at: string
+          id: string
+          pokemon_id: number
+          pokemon_name: string
+          puzzle_date: string
+          slot: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pokemon_id: number
+          pokemon_name: string
+          puzzle_date: string
+          slot: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pokemon_id?: number
+          pokemon_name?: string
+          puzzle_date?: string
+          slot?: string
+        }
+        Relationships: []
+      }
       daily_results: {
         Row: {
           created_at: string
