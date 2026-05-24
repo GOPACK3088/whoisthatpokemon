@@ -354,17 +354,31 @@ function GamePage() {
     setCatchPhaseActive(false);
     const state = loadState();
     if (state.daily) { Object.assign(state.daily, { catchResult: result }); saveState(state); }
-    if (caught && user) {
-      const { error } = await supabase.from("caught_pokemon").upsert(
-        {
-          user_id: user.id,
-          pokemon_id: answer.id,
-          pokemon_name: answer.name,
-          caught_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,pokemon_id" },
-      );
-      if (error) console.error("[index] Failed to save caught Pokémon:", error);
+
+    if (user) {
+      // Always record the catch attempt regardless of outcome
+      const { error: catchResultErr } = await supabase.from("catch_results").insert({
+        user_id: user.id,
+        puzzle_date: puzzleDate,
+        slot,
+        caught,
+        move_chosen: moveChosen || null,
+      });
+      if (catchResultErr) console.error("[index] Failed to save catch result:", catchResultErr);
+
+      // Only upsert into caught_pokemon Pokédex if they actually caught it
+      if (caught) {
+        const { error: caughtErr } = await supabase.from("caught_pokemon").upsert(
+          {
+            user_id: user.id,
+            pokemon_id: answer.id,
+            pokemon_name: answer.name,
+            caught_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,pokemon_id" },
+        );
+        if (caughtErr) console.error("[index] Failed to save caught Pokémon:", caughtErr);
+      }
     }
   }
 

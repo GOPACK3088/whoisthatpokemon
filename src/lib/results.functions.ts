@@ -144,13 +144,16 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
   const today = new Date().toISOString().slice(0, 10);
 
   const [
-    { data: statsRows,    error: statsErr    },
-    { data: caughtRows,   error: caughtErr   },
-    { data: profiles,     error: profileErr  },
-    { data: todayResults, error: todayErr    },
+    { data: statsRows,       error: statsErr       },
+    { data: caughtRows,      error: caughtErr      },
+    { data: catchResultRows, error: catchResultErr },
+    { data: profiles,        error: profileErr     },
+    { data: todayResults,    error: todayErr       },
   ] = await Promise.all([
     db.from("user_stats").select("user_id, total_played, total_won, current_streak, max_streak"),
     db.from("caught_pokemon").select("user_id"),
+    // catch_results has one row per catch attempt; caught=true means they succeeded
+    db.from("catch_results").select("user_id, caught"),
     db.from("profiles").select("id, display_name"),
     db.from("daily_results").select("user_id, guesses_used, won").eq("puzzle_date", today),
   ]);
@@ -160,15 +163,28 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
   console.log("[leaderboard] statsRows data:", JSON.stringify(statsRows));
   console.log("[leaderboard] caughtRows:", caughtRows?.length ?? "null", caughtErr?.message ?? "ok");
   console.log("[leaderboard] caughtRows data:", JSON.stringify(caughtRows));
+  console.log("[leaderboard] catchResultRows:", catchResultRows?.length ?? "null", catchResultErr?.message ?? "ok");
+  console.log("[leaderboard] catchResultRows data:", JSON.stringify(catchResultRows));
   console.log("[leaderboard] profiles:", profiles?.length ?? "null", profileErr?.message ?? "ok");
   console.log("[leaderboard] profiles data:", JSON.stringify(profiles));
   console.log("[leaderboard] todayResults:", todayResults?.length ?? "null", todayErr?.message ?? "ok");
 
   const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
 
+  // Total caught per user from caught_pokemon (unique Pokémon in their Pokédex)
   const caughtByUser = new Map<string, number>();
   for (const row of caughtRows ?? []) {
     caughtByUser.set(row.user_id, (caughtByUser.get(row.user_id) ?? 0) + 1);
+  }
+
+  // Catch rate from catch_results: caught=true attempts / total attempts per user
+  type CatchTally = { attempts: number; successes: number };
+  const catchTallyByUser = new Map<string, CatchTally>();
+  for (const row of catchResultRows ?? []) {
+    const tally = catchTallyByUser.get(row.user_id) ?? { attempts: 0, successes: 0 };
+    tally.attempts += 1;
+    if (row.caught) tally.successes += 1;
+    catchTallyByUser.set(row.user_id, tally);
   }
 
   const leaderboard = (statsRows ?? []).map((s) => {
@@ -177,9 +193,10 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
       (s.total_played ?? 0) > 0
         ? Math.round(((s.total_won ?? 0) / (s.total_played ?? 1)) * 100)
         : 0;
+    const tally = catchTallyByUser.get(s.user_id);
     const catchRate =
-      (s.total_won ?? 0) > 0
-        ? Math.round((totalCaught / (s.total_won ?? 1)) * 100)
+      tally && tally.attempts > 0
+        ? Math.round((tally.successes / tally.attempts) * 100)
         : 0;
 
     const row = {
@@ -194,7 +211,7 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
       max_streak: s.max_streak ?? 0,
     };
 
-    console.log(`[leaderboard] ${s.user_id}: name="${row.display_name}" played=${row.total_played} won=${row.total_won} caught=${row.total_caught} guess%=${row.guess_success_rate} catch%=${row.catch_rate}`);
+    console.log(`[leaderboard] ${s.user_id}: name="${row.display_name}" played=${row.total_played} won=${row.total_won} caught=${row.total_caught} guess%=${row.guess_success_rate} catch%=${row.catch_rate} (${tally?.successes ?? 0}/${tally?.attempts ?? 0} attempts)`);
     return row;
   });
 
