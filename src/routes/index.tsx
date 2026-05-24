@@ -410,13 +410,16 @@ function GamePage() {
 
     if (user) {
       // Always record the catch attempt regardless of outcome
-      const { error: catchResultErr } = await supabase.from("catch_results").insert({
-        user_id: user.id,
-        puzzle_date: puzzleDate,
-        slot,
-        caught,
-        move_chosen: moveChosen || null,
-      });
+      const { error: catchResultErr } = await supabase.from("catch_results").upsert(
+        {
+          user_id: user.id,
+          puzzle_date: puzzleDate,
+          slot,
+          caught,
+          move_chosen: moveChosen || null,
+        },
+        { onConflict: "user_id,puzzle_date,slot" },
+      );
       if (catchResultErr) console.error("[index] Failed to save catch result:", catchResultErr);
 
       // Only upsert into caught_pokemon Pokédex if they actually caught it
