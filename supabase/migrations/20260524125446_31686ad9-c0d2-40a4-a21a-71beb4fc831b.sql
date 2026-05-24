@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Public read daily puzzles" ON public.daily_puzzles;
