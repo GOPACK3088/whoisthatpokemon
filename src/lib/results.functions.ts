@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { todayKey } from "@/lib/pokemon";
 import type { Database } from "@/integrations/supabase/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -11,12 +10,6 @@ function isYesterday(prev: string, today: string): boolean {
   const p = new Date(prev + "T00:00:00Z");
   const t = new Date(today + "T00:00:00Z");
   return t.getTime() - p.getTime() === 86400000;
-}
-
-/** Parse the slot ("am" | "pm") out of a todayKey string like "2026-05-19-am" */
-function slotFromKey(key: string): "am" | "pm" {
-  const suffix = key.split("-").at(-1);
-  return suffix === "pm" ? "pm" : "am";
 }
 
 /** Anon Supabase client for public (unauthenticated) server-side reads. */
@@ -30,9 +23,12 @@ function anonClient() {
 }
 
 // ─── submitDailyResult ────────────────────────────────────────────────────────
+// puzzleDate: bare date "YYYY-MM-DD" (client strips slot suffix before sending)
+// slot:       "am" | "pm" passed explicitly from client — no re-derivation needed
 
 const submitInput = z.object({
-  puzzleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  puzzleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),   // bare date only
+  slot: z.enum(["am", "pm"]),                              // explicit from client
   guessesUsed: z.number().int().min(1).max(10),
   won: z.boolean(),
 });
@@ -43,20 +39,25 @@ export const submitDailyResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    const slot = slotFromKey(todayKey());
+    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate, "slot:", data.slot, "won:", data.won);
 
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
       puzzle_date: data.puzzleDate,
-      slot,
+      slot: data.slot,
       guesses_used: data.guessesUsed,
       won: data.won,
     });
 
-    if (insertErr && !insertErr.message.includes("duplicate")) {
-      throw new Error(insertErr.message);
-    }
     if (insertErr) {
+      // Postgres unique violation = already submitted this slot today
+      const isDuplicate =
+        insertErr.code === "23505" || insertErr.message.toLowerCase().includes("duplicate");
+      if (!isDuplicate) {
+        console.error("[submitDailyResult] insert error:", insertErr);
+        throw new Error(insertErr.message);
+      }
+      console.log("[submitDailyResult] already submitted, returning existing stats");
       const { data: stats } = await supabase
         .from("user_stats")
         .select("*")
@@ -64,6 +65,8 @@ export const submitDailyResult = createServerFn({ method: "POST" })
         .maybeSingle();
       return { stats, alreadySubmitted: true };
     }
+
+    console.log("[submitDailyResult] insert ok, updating user_stats");
 
     const { data: existing } = await supabase
       .from("user_stats")
@@ -77,6 +80,7 @@ export const submitDailyResult = createServerFn({ method: "POST" })
     };
     if (data.won) dist[String(data.guessesUsed)] = (dist[String(data.guessesUsed)] ?? 0) + 1;
 
+    // Streak: last_puzzle_date is stored as bare "YYYY-MM-DD" so isYesterday works correctly
     let currentStreak = existing?.current_streak ?? 0;
     if (data.won) {
       currentStreak =
@@ -95,7 +99,7 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       total_played: (existing?.total_played ?? 0) + 1,
       total_won: (existing?.total_won ?? 0) + (data.won ? 1 : 0),
       guess_distribution: dist,
-      last_puzzle_date: data.puzzleDate,
+      last_puzzle_date: data.puzzleDate,   // bare date — streak math depends on this
       updated_at: new Date().toISOString(),
     };
 
@@ -104,8 +108,13 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       .upsert(updated)
       .select()
       .single();
-    if (upErr) throw new Error(upErr.message);
 
+    if (upErr) {
+      console.error("[submitDailyResult] upsert error:", upErr);
+      throw new Error(upErr.message);
+    }
+
+    console.log("[submitDailyResult] done — total_played:", updated.total_played, "streak:", currentStreak);
     return { stats: saved, alreadySubmitted: false };
   });
 
@@ -135,10 +144,10 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
   const today = new Date().toISOString().slice(0, 10);
 
   const [
-    { data: statsRows,   error: statsErr   },
-    { data: caughtRows,  error: caughtErr  },
-    { data: profiles,    error: profileErr },
-    { data: todayResults,error: todayErr   },
+    { data: statsRows,    error: statsErr    },
+    { data: caughtRows,   error: caughtErr   },
+    { data: profiles,     error: profileErr  },
+    { data: todayResults, error: todayErr    },
   ] = await Promise.all([
     db.from("user_stats").select("user_id, total_played, total_won, current_streak, max_streak"),
     db.from("caught_pokemon").select("user_id"),
@@ -146,31 +155,22 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
     db.from("daily_results").select("user_id, guesses_used, won").eq("puzzle_date", today),
   ]);
 
-  // ── Debug: log every query result to server stdout ──────────────────────
   console.log("[leaderboard] today:", today);
-  console.log("[leaderboard] statsRows count:", statsRows?.length ?? "null", "| error:", statsErr?.message ?? "none");
+  console.log("[leaderboard] statsRows:", statsRows?.length ?? "null", statsErr?.message ?? "ok");
   console.log("[leaderboard] statsRows data:", JSON.stringify(statsRows));
-  console.log("[leaderboard] caughtRows count:", caughtRows?.length ?? "null", "| error:", caughtErr?.message ?? "none");
+  console.log("[leaderboard] caughtRows:", caughtRows?.length ?? "null", caughtErr?.message ?? "ok");
   console.log("[leaderboard] caughtRows data:", JSON.stringify(caughtRows));
-  console.log("[leaderboard] profiles count:", profiles?.length ?? "null", "| error:", profileErr?.message ?? "none");
+  console.log("[leaderboard] profiles:", profiles?.length ?? "null", profileErr?.message ?? "ok");
   console.log("[leaderboard] profiles data:", JSON.stringify(profiles));
-  console.log("[leaderboard] todayResults count:", todayResults?.length ?? "null", "| error:", todayErr?.message ?? "none");
-  console.log("[leaderboard] todayResults data:", JSON.stringify(todayResults));
+  console.log("[leaderboard] todayResults:", todayResults?.length ?? "null", todayErr?.message ?? "ok");
 
-  // ── Build lookup maps ────────────────────────────────────────────────────
-
-  // profiles keyed by id — used to join display name onto stats rows
   const nameMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? "Player"]));
-  console.log("[leaderboard] nameMap entries:", [...nameMap.entries()]);
 
-  // Count caught per user
   const caughtByUser = new Map<string, number>();
   for (const row of caughtRows ?? []) {
     caughtByUser.set(row.user_id, (caughtByUser.get(row.user_id) ?? 0) + 1);
   }
-  console.log("[leaderboard] caughtByUser entries:", [...caughtByUser.entries()]);
 
-  // ── Build leaderboard rows ───────────────────────────────────────────────
   const leaderboard = (statsRows ?? []).map((s) => {
     const totalCaught = caughtByUser.get(s.user_id) ?? 0;
     const guessSuccessRate =
@@ -194,14 +194,10 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
       max_streak: s.max_streak ?? 0,
     };
 
-    console.log(
-      `[leaderboard] player ${s.user_id}: display_name="${row.display_name}" total_played=${row.total_played} total_won=${row.total_won} total_caught=${row.total_caught} guess_rate=${row.guess_success_rate}% catch_rate=${row.catch_rate}%`,
-    );
-
+    console.log(`[leaderboard] ${s.user_id}: name="${row.display_name}" played=${row.total_played} won=${row.total_won} caught=${row.total_caught} guess%=${row.guess_success_rate} catch%=${row.catch_rate}`);
     return row;
   });
 
-  // ── Today stats ──────────────────────────────────────────────────────────
   const wonToday = (todayResults ?? []).filter((r) => r.won);
   const todayStats = {
     players: todayResults?.length ?? 0,
@@ -213,9 +209,6 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
           ) / 10
         : null,
   };
-
-  console.log("[leaderboard] todayStats:", todayStats);
-  console.log("[leaderboard] leaderboard rows:", leaderboard.length);
 
   return { leaderboard, todayStats };
 });

@@ -173,17 +173,34 @@ function HintBar({
   );
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * todayKey() returns "YYYY-MM-DD-am" or "YYYY-MM-DD-pm".
+ * Split into { puzzleDate, slot } so the server Zod schema gets a bare date.
+ */
+function splitKey(key: string): { puzzleDate: string; slot: "am" | "pm" } {
+  const parts = key.split("-"); // ["2026","05","23","am"]
+  const slot = parts.at(-1) === "pm" ? "pm" : "am";
+  const puzzleDate = parts.slice(0, 3).join("-"); // "2026-05-23"
+  return { puzzleDate, slot };
+}
+
 // ─── Game page ────────────────────────────────────────────────────────────────
 
 function GamePage() {
-  const date = todayKey();
-  const answer = useMemo(() => getDailyPokemon(date), [date]);
-  const { user } = useAuth();
+  const key = todayKey();                              // e.g. "2026-05-23-am"
+  const { puzzleDate, slot } = splitKey(key);          // "2026-05-23", "am"
+  const answer = useMemo(() => getDailyPokemon(key), [key]);
+  const { user, loading: authLoading } = useAuth();
   const submitFn = useServerFn(submitDailyResult);
 
   const [guessIds, setGuessIds] = useState<number[]>([]);
   const [finished, setFinished] = useState(false);
   const [won, setWon] = useState(false);
+  // submitted tracks server sync for the current session.
+  // Deliberately NOT pre-seeded from localStorage so that if a user finishes
+  // the puzzle while logged out then signs in, the sync still fires.
   const [submitted, setSubmitted] = useState(false);
   const [catchPhaseActive, setCatchPhaseActive] = useState(false);
   const [catchResult, setCatchResult] = useState<{ caught: boolean; moveChosen: string } | null>(
@@ -208,10 +225,11 @@ function GamePage() {
     setShowWelcome(false);
   }
 
-  // Hydrate from localStorage on mount
+  // Hydrate game state from localStorage on mount.
+  // Note: `submitted` is intentionally NOT restored here — see comment above.
   useEffect(() => {
     const { daily } = loadState();
-    if (daily && daily.date === date) {
+    if (daily && daily.date === key) {
       const d = daily as typeof daily & {
         catchResult?: { caught: boolean; moveChosen: string };
         hint1Used?: boolean;
@@ -222,12 +240,12 @@ function GamePage() {
       setGuessIds(d.guesses);
       setFinished(d.finished);
       setWon(d.won);
-      setSubmitted(d.submitted);
+      // Do NOT set submitted here — let the sync effect decide based on live auth state
       if (d.finished && d.won) setCatchResult(d.catchResult ?? { caught: false, moveChosen: "" });
       if (d.hint1Used) { setHint1Used(true); setHint1Value(d.hint1Value ?? null); }
       if (d.hint2Used) { setHint2Used(true); setHint2Value(d.hint2Value ?? null); }
     }
-  }, [date]);
+  }, [key]);
 
   const guesses = useMemo(
     () =>
@@ -238,17 +256,28 @@ function GamePage() {
   );
   const results = useMemo(() => guesses.map((g) => compareGuess(g, answer)), [guesses, answer]);
 
-  // Sync to server when finished and signed in
+  // Sync result to server once auth resolves and game is finished.
+  // `submitted` is session-only (never seeded from localStorage) so this fires
+  // correctly even when the user signs in after completing the puzzle.
   useEffect(() => {
-    if (!finished || submitted || !user) return;
-    submitFn({ data: { puzzleDate: date, guessesUsed: guessIds.length, won } })
+    if (authLoading) return;            // wait for auth to resolve
+    if (!finished) return;              // game not done yet
+    if (submitted) return;              // already synced this session
+    if (!user) return;                  // not signed in
+
+    submitFn({ data: { puzzleDate, slot, guessesUsed: guessIds.length, won } })
       .then(() => {
         setSubmitted(true);
+        // Mark submitted in localStorage so a hard refresh doesn't double-submit
         const state = loadState();
         if (state.daily) { state.daily.submitted = true; saveState(state); }
+        console.log("[index] submitDailyResult succeeded");
       })
-      .catch((e) => console.error("Sync failed:", e));
-  }, [finished, submitted, user, submitFn, date, guessIds.length, won]);
+      .catch((e) => {
+        console.error("[index] submitDailyResult failed:", e);
+        toast.error("Failed to save result to server — will retry on next load.");
+      });
+  }, [authLoading, finished, submitted, user, submitFn, puzzleDate, slot, guessIds.length, won]);
 
   // ── Hint helpers ──────────────────────────────────────────────────────────
 
@@ -308,11 +337,11 @@ function GamePage() {
     if (isDone) { setFinished(true); setWon(isWin); if (isWin) setCatchPhaseActive(true); }
     const state = loadState();
     const daily = Object.assign(
-      { date, guesses: newIds, finished: isDone, won: isWin, submitted: false, catchResult: null },
+      { date: key, guesses: newIds, finished: isDone, won: isWin, submitted: false, catchResult: null },
       { hint1Used, hint1Value, hint2Used, hint2Value },
     );
     const stats = isDone
-      ? applyResultToStats(state.stats, isWin, newIds.length, date)
+      ? applyResultToStats(state.stats, isWin, newIds.length, puzzleDate)
       : state.stats;
     saveState({ daily, stats });
   }
@@ -335,7 +364,7 @@ function GamePage() {
         },
         { onConflict: "user_id,pokemon_id" },
       );
-      if (error) console.error("Failed to save caught Pokémon:", error);
+      if (error) console.error("[index] Failed to save caught Pokémon:", error);
     }
   }
 
@@ -349,7 +378,7 @@ function GamePage() {
         ? `🎯 Caught with ${catchResult.moveChosen}!`
         : `💨 It got away…`
       : "";
-    const text = `PokéCatch ${date} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
+    const text = `PokéCatch ${puzzleDate} ${slot.toUpperCase()} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {});
     } else {
@@ -361,8 +390,6 @@ function GamePage() {
   const empties = finished ? 0 : Math.min(3, MAX_GUESSES - guesses.length);
 
   // ── Catch phase: full-screen takeover ─────────────────────────────────────
-  // When the catch phase is active, render ONLY the catch UI — no input,
-  // no guess rows, no empty slots. It appears at the very top of the page.
 
   if (catchPhaseActive && won) {
     return (
@@ -392,7 +419,6 @@ function GamePage() {
         <GuessInput onGuess={handleGuess} excludeIds={guessIds} disabled={finished} />
       )}
 
-      {/* Hint bar — only visible during active play */}
       {!finished && (
         <HintBar
           guessCount={guessIds.length}
