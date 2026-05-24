@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PokedexRouteImport } from './routes/pokedex'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as HowToPlayRouteImport } from './routes/how-to-play'
@@ -18,6 +19,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PokedexRoute = PokedexRouteImport.update({
+  id: '/pokedex',
+  path: '/pokedex',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/how-to-play': typeof HowToPlayRoute
   '/leaderboard': typeof LeaderboardRoute
   '/login': typeof LoginRoute
+  '/pokedex': typeof PokedexRoute
   '/profile': typeof ProfileRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/how-to-play': typeof HowToPlayRoute
   '/leaderboard': typeof LeaderboardRoute
   '/login': typeof LoginRoute
+  '/pokedex': typeof PokedexRoute
   '/profile': typeof ProfileRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,28 @@ export interface FileRoutesById {
   '/how-to-play': typeof HowToPlayRoute
   '/leaderboard': typeof LeaderboardRoute
   '/login': typeof LoginRoute
+  '/pokedex': typeof PokedexRoute
   '/profile': typeof ProfileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/how-to-play' | '/leaderboard' | '/login' | '/profile'
+  fullPaths:
+    | '/'
+    | '/how-to-play'
+    | '/leaderboard'
+    | '/login'
+    | '/pokedex'
+    | '/profile'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/how-to-play' | '/leaderboard' | '/login' | '/profile'
-  id: '__root__' | '/' | '/how-to-play' | '/leaderboard' | '/login' | '/profile'
+  to: '/' | '/how-to-play' | '/leaderboard' | '/login' | '/pokedex' | '/profile'
+  id:
+    | '__root__'
+    | '/'
+    | '/how-to-play'
+    | '/leaderboard'
+    | '/login'
+    | '/pokedex'
+    | '/profile'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +98,7 @@ export interface RootRouteChildren {
   HowToPlayRoute: typeof HowToPlayRoute
   LeaderboardRoute: typeof LeaderboardRoute
   LoginRoute: typeof LoginRoute
+  PokedexRoute: typeof PokedexRoute
   ProfileRoute: typeof ProfileRoute
 }
 
@@ -86,6 +109,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pokedex': {
+      id: '/pokedex'
+      path: '/pokedex'
+      fullPath: '/pokedex'
+      preLoaderRoute: typeof PokedexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -124,8 +154,19 @@ const rootRouteChildren: RootRouteChildren = {
   HowToPlayRoute: HowToPlayRoute,
   LeaderboardRoute: LeaderboardRoute,
   LoginRoute: LoginRoute,
+  PokedexRoute: PokedexRoute,
   ProfileRoute: ProfileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
