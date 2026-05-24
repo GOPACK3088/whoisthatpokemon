@@ -72,6 +72,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          mode: string
           pokemon_id: number
           pokemon_name: string
           puzzle_date: string
@@ -80,6 +81,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          mode?: string
           pokemon_id: number
           pokemon_name: string
           puzzle_date: string
@@ -88,6 +90,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          mode?: string
           pokemon_id?: number
           pokemon_name?: string
           puzzle_date?: string
