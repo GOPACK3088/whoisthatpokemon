@@ -7,11 +7,14 @@ export function GuessInput({
   onGuess,
   excludeIds,
   disabled,
+  pokemonPool,
 }: {
   onGuess: (p: Pokemon) => void;
   excludeIds: number[];
   disabled?: boolean;
+  pokemonPool?: Pokemon[];
 }) {
+  const pool = pokemonPool ?? POKEMON;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -21,7 +24,7 @@ export function GuessInput({
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const excl = new Set(excludeIds);
-    return POKEMON.filter((p) => !excl.has(p.id) && p.name.includes(q)).slice(0, 8);
+    return pool.filter((p) => !excl.has(p.id) && p.name.includes(q)).slice(0, 8);
   }, [query, excludeIds]);
 
   useEffect(() => {

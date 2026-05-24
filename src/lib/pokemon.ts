@@ -18,6 +18,34 @@ export const POKEMON: Pokemon[] = pokemonData as Pokemon[];
 export const POKEMON_BY_NAME = new Map(POKEMON.map((p) => [p.name, p]));
 export const MAX_GUESSES = 10;
 
+// ─── Mode system ──────────────────────────────────────────────────────────────
+
+export type GameMode = "classic" | "retro";
+
+export const MODES: Record<GameMode, { label: string; description: string; maxId: number | null }> = {
+  classic: {
+    label: "Classic",
+    description: "All generations",
+    maxId: null,
+  },
+  retro: {
+    label: "Retro",
+    description: "Gen 1–3 only",
+    maxId: 386,
+  },
+};
+
+export function filterPokemonByMode(mode: GameMode): Pokemon[] {
+  const { maxId } = MODES[mode];
+  return maxId === null ? POKEMON : POKEMON.filter((p) => p.id <= maxId);
+}
+
+export function getDailyPokemonForMode(dateKey: string, mode: GameMode): Pokemon {
+  const pool = filterPokemonByMode(mode);
+  const idx = hashString(dateKey + mode) % pool.length;
+  return pool[idx];
+}
+
 // ET offset: UTC-5 (EST) or UTC-4 (EDT)
 function getETOffset(utcDate: Date): number {
   // DST in ET: second Sunday in March to first Sunday in November

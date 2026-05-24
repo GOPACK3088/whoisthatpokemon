@@ -7,12 +7,16 @@ import {
   compareGuess,
   emojiGrid,
   getDailyPokemon,
+  getDailyPokemonForMode,
   fetchDailyPokemon,
+  filterPokemonByMode,
   splitKey,
+  MODES,
   MAX_GUESSES,
   msUntilNextPuzzle,
   todayKey,
   type Pokemon,
+  type GameMode,
 } from "@/lib/pokemon";
 import { applyResultToStats, loadState, saveState } from "@/lib/local-storage";
 import { GuessRow } from "@/components/GuessRow";
@@ -175,6 +179,30 @@ function HintBar({
   );
 }
 
+// ─── Mode selector ──────────────────────────────────────────────────────────────
+
+function ModeSelector({ mode, onChange, disabled }: { mode: GameMode; onChange: (m: GameMode) => void; disabled: boolean }) {
+  return (
+    <div className="flex gap-1 p-1 rounded-lg bg-zinc-900 border border-zinc-700 w-fit">
+      {(Object.entries(MODES) as [GameMode, typeof MODES[GameMode]][]).map(([key, cfg]) => (
+        <button
+          key={key}
+          disabled={disabled}
+          onClick={() => onChange(key)}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+            mode === key
+              ? "bg-yellow-500 text-black shadow-sm"
+              : "text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          }`}
+        >
+          <span>{cfg.label}</span>
+          <span className="ml-1.5 text-xs opacity-70">{cfg.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // splitKey is imported from @/lib/pokemon — no local duplicate needed.
 
@@ -183,9 +211,18 @@ function HintBar({
 function GamePage() {
   const key = todayKey();                              // e.g. "2026-05-23-am"
   const { puzzleDate, slot } = splitKey(key);          // "2026-05-23", "am"
+
+  // Mode: persisted in localStorage, locked once the game starts
+  const [mode, setMode] = useState<GameMode>(() => {
+    const saved = localStorage.getItem("pokecatch_mode");
+    return (saved === "retro" ? "retro" : "classic") as GameMode;
+  });
+
+  const pokemonPool = useMemo(() => filterPokemonByMode(mode), [mode]);
+
   // Start with the fast hash-based answer immediately so the UI isn't blank,
   // then replace it if the daily_puzzles table has an override for today.
-  const [answer, setAnswer] = useState<Pokemon>(() => getDailyPokemon(key));
+  const [answer, setAnswer] = useState<Pokemon>(() => getDailyPokemonForMode(key, mode));
   const { user, loading: authLoading } = useAuth();
   const submitFn = useServerFn(submitDailyResult);
 
@@ -193,10 +230,13 @@ function GamePage() {
   useEffect(() => {
     let cancelled = false;
     fetchDailyPokemon(key).then((p) => {
-      if (!cancelled) setAnswer(p);
+      if (!cancelled) {
+        // DB answer overrides only for classic mode (DB puzzles don't know about modes yet)
+        if (mode === "classic") setAnswer(p);
+      }
     });
     return () => { cancelled = true; };
-  }, [key]);
+  }, [key, mode]);
 
   const [guessIds, setGuessIds] = useState<number[]>([]);
   const [finished, setFinished] = useState(false);
@@ -228,6 +268,14 @@ function GamePage() {
     setShowWelcome(false);
   }
 
+  function handleModeChange(newMode: GameMode) {
+    if (guessIds.length > 0) return; // locked once game starts
+    setMode(newMode);
+    localStorage.setItem("pokecatch_mode", newMode);
+    // New answer for the new mode (hash-based; DB override doesn't apply to retro)
+    setAnswer(getDailyPokemonForMode(key, newMode));
+  }
+
   // Hydrate game state from localStorage on mount.
   // Note: `submitted` is intentionally NOT restored here — see comment above.
   useEffect(() => {
@@ -239,6 +287,7 @@ function GamePage() {
         hint2Used?: boolean;
         hint1Value?: string | null;
         hint2Value?: string | null;
+        mode?: GameMode;
       };
       setGuessIds(d.guesses);
       setFinished(d.finished);
@@ -247,6 +296,12 @@ function GamePage() {
       if (d.finished && d.won) setCatchResult(d.catchResult ?? { caught: false, moveChosen: "" });
       if (d.hint1Used) { setHint1Used(true); setHint1Value(d.hint1Value ?? null); }
       if (d.hint2Used) { setHint2Used(true); setHint2Value(d.hint2Value ?? null); }
+      // Restore mode — answer was already generated with this mode on setState init,
+      // but if stored mode differs from default, re-derive the answer.
+      if (d.mode && d.mode !== mode) {
+        setMode(d.mode);
+        setAnswer(getDailyPokemonForMode(key, d.mode));
+      }
     }
   }, [key]);
 
@@ -341,7 +396,7 @@ function GamePage() {
     const state = loadState();
     const daily = Object.assign(
       { date: key, guesses: newIds, finished: isDone, won: isWin, submitted: false, catchResult: null },
-      { hint1Used, hint1Value, hint2Used, hint2Value },
+      { hint1Used, hint1Value, hint2Used, hint2Value, mode },
     );
     const stats = isDone
       ? applyResultToStats(state.stats, isWin, newIds.length, puzzleDate)
@@ -395,7 +450,8 @@ function GamePage() {
         ? `🎯 Caught with ${catchResult.moveChosen}!`
         : `💨 It got away…`
       : "";
-    const text = `PokéCatch ${puzzleDate} ${slot.toUpperCase()} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
+    const modeLabel = mode === "retro" ? " [Retro]" : "";
+    const text = `PokéCatch ${puzzleDate} ${slot.toUpperCase()}${modeLabel} ${score}\n\n${grid}${catchLine ? `\n\n${catchLine}` : ""}`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {});
     } else {
@@ -432,8 +488,15 @@ function GamePage() {
         </p>
       </div>
 
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <ModeSelector mode={mode} onChange={handleModeChange} disabled={guessIds.length > 0} />
+        {guessIds.length > 0 && (
+          <span className="text-xs text-zinc-500">Mode locked — finish to switch</span>
+        )}
+      </div>
+
       {!finished && (
-        <GuessInput onGuess={handleGuess} excludeIds={guessIds} disabled={finished} />
+        <GuessInput onGuess={handleGuess} excludeIds={guessIds} disabled={finished} pokemonPool={pokemonPool} />
       )}
 
       {!finished && (

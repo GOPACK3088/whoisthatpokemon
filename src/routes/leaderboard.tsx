@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getLeaderboard } from "@/lib/results.functions";
+import { type GameMode, MODES } from "@/lib/pokemon";
 
 export const Route = createFileRoute("/leaderboard")({
   component: LeaderboardPage,
@@ -26,6 +27,7 @@ type Row = {
   catch_rate: number;
   current_streak: number;
   max_streak: number;
+  mode?: GameMode;
 };
 
 type SortKey = "total_played" | "guess_success_rate" | "catch_rate" | "total_caught";
@@ -61,14 +63,8 @@ function ColHeader({
       title={title}
       onClick={() => onSort(sortKey)}
     >
-      <span
-        className={`inline-flex items-center gap-1 ${
-          align === "right" ? "flex-row-reverse" : ""
-        }`}
-      >
-        <span
-          className={isActive ? "text-white" : "text-zinc-400 group-hover:text-zinc-200 transition-colors"}
-        >
+      <span className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}>
+        <span className={isActive ? "text-white" : "text-zinc-400 group-hover:text-zinc-200 transition-colors"}>
           {shortLabel ? (
             <>
               <span className="hidden sm:inline">{label}</span>
@@ -88,6 +84,93 @@ function ColHeader({
   );
 }
 
+// ─── Mode tabs ────────────────────────────────────────────────────────────────
+
+function ModeTabs({ active, onChange }: { active: GameMode; onChange: (m: GameMode) => void }) {
+  return (
+    <div className="flex gap-1 p-1 rounded-lg bg-zinc-900 border border-zinc-700 w-fit">
+      {(Object.entries(MODES) as [GameMode, typeof MODES[GameMode]][]).map(([key, cfg]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+            active === key
+              ? "bg-yellow-500 text-black shadow-sm"
+              : "text-zinc-400 hover:text-white"
+          }`}
+        >
+          {cfg.label}
+          <span className="ml-1.5 text-xs opacity-70">{cfg.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Leaderboard table ────────────────────────────────────────────────────────
+
+function LeaderboardTable({ rows }: { rows: Row[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>("total_caught");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
+  const sorted = useMemo<Row[]>(() => {
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = a[sortKey] as number;
+      const bv = b[sortKey] as number;
+      return sortDir === "desc" ? bv - av : av - bv;
+    });
+    return copy;
+  }, [rows, sortKey, sortDir]);
+
+  const colProps = { active: sortKey, dir: sortDir, onSort: handleSort };
+
+  return (
+    <div className="rounded-lg border border-zinc-700 overflow-x-auto">
+      <table className="w-full text-xs sm:text-sm min-w-[420px]">
+        <thead className="bg-zinc-800">
+          <tr>
+            <th className="text-left px-2 sm:px-3 py-2 text-zinc-400 w-7 sm:w-8">#</th>
+            <th className="text-left px-2 sm:px-3 py-2 text-zinc-400">Player</th>
+            <ColHeader label="Games"   shortLabel="G"  sortKey="total_played"        title="Total games played"                    {...colProps} />
+            <ColHeader label="Guess %" shortLabel="G%" sortKey="guess_success_rate"  title="Puzzles solved ÷ played"               {...colProps} />
+            <ColHeader label="Catch %" shortLabel="C%" sortKey="catch_rate"          title="Pokémon caught ÷ catch attempts"        {...colProps} />
+            <ColHeader label="Caught"  shortLabel="🎯" sortKey="total_caught"        title="Total Pokémon caught all-time"          {...colProps} />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((s, i) => (
+            <tr key={s.user_id} className="border-t border-zinc-700 hover:bg-zinc-800/40 transition-colors">
+              <td className="px-2 sm:px-3 py-2 text-zinc-500 tabular-nums">{i + 1}</td>
+              <td className="px-2 sm:px-3 py-2 font-medium text-white max-w-[100px] sm:max-w-none truncate">{s.display_name}</td>
+              <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.total_played}</td>
+              <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.guess_success_rate}%</td>
+              <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.catch_rate}%</td>
+              <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-yellow-400 font-semibold">{s.total_caught}</td>
+            </tr>
+          ))}
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                No results yet — be the first!
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function LeaderboardPage() {
@@ -97,31 +180,17 @@ function LeaderboardPage() {
     queryFn: () => fetchFn(),
   });
 
-  const [sortKey, setSortKey] = useState<SortKey>("total_caught");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [modeTab, setModeTab] = useState<GameMode>("classic");
 
-  function handleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setSortKey(key);
-      // Numeric stats default to desc (higher = better); toggle from there
-      setSortDir("desc");
+  // Filter leaderboard rows by mode.
+  // Rows without a mode field (older data) are shown under Classic.
+  const filteredRows = useMemo<Row[]>(() => {
+    const all = (data?.leaderboard ?? []) as Row[];
+    if (modeTab === "classic") {
+      return all.filter((r) => !r.mode || r.mode === "classic");
     }
-  }
-
-  const sorted = useMemo<Row[]>(() => {
-    const rows = [...(data?.leaderboard ?? [])] as Row[];
-    rows.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : 0;
-      return sortDir === "desc" ? -cmp : cmp;
-    });
-    return rows;
-  }, [data?.leaderboard, sortKey, sortDir]);
-
-  const colProps = { active: sortKey, dir: sortDir, onSort: handleSort };
+    return all.filter((r) => r.mode === modeTab);
+  }, [data?.leaderboard, modeTab]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
@@ -134,76 +203,26 @@ function LeaderboardPage() {
           {/* Today's snapshot */}
           <section className="grid grid-cols-3 gap-3">
             <Stat label="Players today" value={data?.todayStats.players ?? 0} />
-            <Stat label="Solved today" value={data?.todayStats.solved ?? 0} />
+            <Stat label="Solved today"  value={data?.todayStats.solved ?? 0} />
             <Stat
               label="Avg guesses"
               value={data?.todayStats.avgGuesses != null ? String(data.todayStats.avgGuesses) : "—"}
             />
           </section>
 
-          {/* All-time table */}
+          {/* Mode tabs + table */}
           <section className="space-y-3">
-            <div className="flex items-baseline justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-xl font-semibold text-white">All-time rankings</h2>
               <p className="text-xs text-zinc-600">Click a column to sort</p>
             </div>
-            <div className="rounded-lg border border-zinc-700 overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm min-w-[420px]">
-                <thead className="bg-zinc-800">
-                  <tr>
-                    <th className="text-left px-2 sm:px-3 py-2 text-zinc-400 w-7 sm:w-8">#</th>
-                    <th className="text-left px-2 sm:px-3 py-2 text-zinc-400">Player</th>
-                    <ColHeader
-                      label="Games"
-                      shortLabel="G"
-                      sortKey="total_played"
-                      title="Total games played"
-                      {...colProps}
-                    />
-                    <ColHeader
-                      label="Guess %"
-                      shortLabel="G%"
-                      sortKey="guess_success_rate"
-                      title="Puzzles solved ÷ played"
-                      {...colProps}
-                    />
-                    <ColHeader
-                      label="Catch %"
-                      shortLabel="C%"
-                      sortKey="catch_rate"
-                      title="Pokémon caught ÷ catch attempts"
-                      {...colProps}
-                    />
-                    <ColHeader
-                      label="Caught"
-                      shortLabel="🎯"
-                      sortKey="total_caught"
-                      title="Total Pokémon caught all-time"
-                      {...colProps}
-                    />
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((s, i) => (
-                    <tr key={s.user_id} className="border-t border-zinc-700 hover:bg-zinc-800/40 transition-colors">
-                      <td className="px-2 sm:px-3 py-2 text-zinc-500 tabular-nums">{i + 1}</td>
-                      <td className="px-2 sm:px-3 py-2 font-medium text-white max-w-[100px] sm:max-w-none truncate">{s.display_name}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.total_played}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.guess_success_rate}%</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.catch_rate}%</td>
-                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-yellow-400 font-semibold">{s.total_caught}</td>
-                    </tr>
-                  ))}
-                  {sorted.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">No results yet — be the first!</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+
+            <ModeTabs active={modeTab} onChange={setModeTab} />
+
+            <LeaderboardTable rows={filteredRows} />
+
             <p className="text-xs text-zinc-600">
-              Guess % = solved ÷ played · Catch % = caught ÷ solved
+              Guess % = solved ÷ played · Catch % = caught ÷ catch attempts
             </p>
           </section>
         </>
