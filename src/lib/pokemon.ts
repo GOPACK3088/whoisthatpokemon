@@ -95,12 +95,15 @@ export function getDailyPokemon(dateKey: string = todayKey()): Pokemon {
 
 /**
  * Async version of getDailyPokemon.
- * 1. Tries the daily_puzzles Supabase table for the given date + slot.
- * 2. Falls back to the deterministic hash if no row is found or on any error.
+ * 1. Tries the daily_puzzles Supabase table for the given date + slot + mode.
+ * 2. Falls back to getDailyPokemonForMode (hash) if no row is found or on any error.
  *
  * Uses the public anon key — no auth required (public read RLS policy).
  */
-export async function fetchDailyPokemon(dateKey: string = todayKey()): Promise<Pokemon> {
+export async function fetchDailyPokemon(
+  dateKey: string = todayKey(),
+  mode: GameMode = "classic",
+): Promise<Pokemon> {
   try {
     const { puzzleDate, slot } = splitKey(dateKey);
 
@@ -117,10 +120,10 @@ export async function fetchDailyPokemon(dateKey: string = todayKey()): Promise<P
         .select("pokemon_id, pokemon_name")
         .eq("puzzle_date", puzzleDate)
         .eq("slot", slot)
+        .eq("mode", mode)
         .maybeSingle();
 
       if (!error && data) {
-        // Find by id first, then fall back to name match
         const byId = POKEMON.find((p) => p.id === data.pokemon_id);
         if (byId) return byId;
         const byName = POKEMON_BY_NAME.get(data.pokemon_name);
@@ -135,7 +138,7 @@ export async function fetchDailyPokemon(dateKey: string = todayKey()): Promise<P
   }
 
   // Hash fallback
-  return getDailyPokemon(dateKey);
+  return getDailyPokemonForMode(dateKey, mode);
 }
 
 /** Split a todayKey like "2026-05-23-am" into { puzzleDate, slot }. */

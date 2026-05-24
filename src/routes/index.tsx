@@ -229,11 +229,8 @@ function GamePage() {
   // Async lookup: replace hash answer with DB-scheduled one if available
   useEffect(() => {
     let cancelled = false;
-    fetchDailyPokemon(key).then((p) => {
-      if (!cancelled) {
-        // DB answer overrides only for classic mode (DB puzzles don't know about modes yet)
-        if (mode === "classic") setAnswer(p);
-      }
+    fetchDailyPokemon(key, mode).then((p) => {
+      if (!cancelled) setAnswer(p);
     });
     return () => { cancelled = true; };
   }, [key, mode]);
