@@ -18,7 +18,7 @@ import {
   type Pokemon,
   type GameMode,
 } from "@/lib/pokemon";
-import { applyResultToStats, loadState, saveState } from "@/lib/local-storage";
+import { applyResultToStats, loadDailyState, loadStats, saveDailyState, saveStats, type DailyState } from "@/lib/local-storage";
 import { GuessRow } from "@/components/GuessRow";
 import { GuessInput } from "@/components/GuessInput";
 import { CatchPhase } from "@/components/CatchPhase";
@@ -266,41 +266,38 @@ function GamePage() {
   }
 
   function handleModeChange(newMode: GameMode) {
-    if (guessIds.length > 0) return; // locked once game starts
+    if (newMode === mode) return;
     setMode(newMode);
     localStorage.setItem("pokecatch_mode", newMode);
-    // New answer for the new mode (hash-based; DB override doesn't apply to retro)
+    // Answer for the new mode — hydration effect will load saved state if it exists
     setAnswer(getDailyPokemonForMode(key, newMode));
   }
 
-  // Hydrate game state from localStorage on mount.
-  // Note: `submitted` is intentionally NOT restored here — see comment above.
+  // Hydrate game state from localStorage when key or mode changes.
+  // Each (key, mode) pair is stored independently so switching modes loads
+  // the correct in-progress or completed state for that mode.
+  // Note: `submitted` is intentionally NOT restored — see comment on useState above.
   useEffect(() => {
-    const { daily } = loadState();
-    if (daily && daily.date === key) {
-      const d = daily as typeof daily & {
-        catchResult?: { caught: boolean; moveChosen: string };
-        hint1Used?: boolean;
-        hint2Used?: boolean;
-        hint1Value?: string | null;
-        hint2Value?: string | null;
-        mode?: GameMode;
-      };
-      setGuessIds(d.guesses);
-      setFinished(d.finished);
-      setWon(d.won);
-      // Do NOT set submitted here — let the sync effect decide based on live auth state
-      if (d.finished && d.won) setCatchResult(d.catchResult ?? { caught: false, moveChosen: "" });
-      if (d.hint1Used) { setHint1Used(true); setHint1Value(d.hint1Value ?? null); }
-      if (d.hint2Used) { setHint2Used(true); setHint2Value(d.hint2Value ?? null); }
-      // Restore mode — answer was already generated with this mode on setState init,
-      // but if stored mode differs from default, re-derive the answer.
-      if (d.mode && d.mode !== mode) {
-        setMode(d.mode);
-        setAnswer(getDailyPokemonForMode(key, d.mode));
-      }
-    }
-  }, [key]);
+    // Reset all game state first so stale state from the previous mode doesn't bleed through
+    setGuessIds([]);
+    setFinished(false);
+    setWon(false);
+    setSubmitted(false);
+    setCatchPhaseActive(false);
+    setCatchResult(null);
+    setHint1Used(false); setHint1Value(null);
+    setHint2Used(false); setHint2Value(null);
+
+    const d = loadDailyState(key, mode);
+    if (!d) return;
+
+    setGuessIds(d.guesses);
+    setFinished(d.finished);
+    setWon(d.won);
+    if (d.finished && d.won) setCatchResult(d.catchResult ?? { caught: false, moveChosen: "" });
+    if (d.hint1Used) { setHint1Used(true); setHint1Value(d.hint1Value ?? null); }
+    if (d.hint2Used) { setHint2Used(true); setHint2Value(d.hint2Value ?? null); }
+  }, [key, mode]);
 
   const guesses = useMemo(
     () =>
@@ -323,9 +320,8 @@ function GamePage() {
     submitFn({ data: { puzzleDate, slot, guessesUsed: guessIds.length, won } })
       .then(() => {
         setSubmitted(true);
-        // Mark submitted in localStorage so a hard refresh doesn't double-submit
-        const state = loadState();
-        if (state.daily) { state.daily.submitted = true; saveState(state); }
+        const d = loadDailyState(key, mode);
+        if (d) saveDailyState(key, mode, { ...d, submitted: true });
         console.log("[index] submitDailyResult succeeded");
       })
       .catch((e) => {
@@ -342,16 +338,8 @@ function GamePage() {
     h2Used: boolean,
     h2Val: string | null,
   ) {
-    const state = loadState();
-    if (state.daily) {
-      Object.assign(state.daily, {
-        hint1Used: h1Used,
-        hint1Value: h1Val,
-        hint2Used: h2Used,
-        hint2Value: h2Val,
-      });
-      saveState(state);
-    }
+    const d = loadDailyState(key, mode);
+    if (d) saveDailyState(key, mode, { ...d, hint1Used: h1Used, hint1Value: h1Val, hint2Used: h2Used, hint2Value: h2Val });
   }
 
   function handleUseHint1() {
@@ -390,15 +378,24 @@ function GamePage() {
     const isDone = isWin || newIds.length >= MAX_GUESSES;
     setGuessIds(newIds);
     if (isDone) { setFinished(true); setWon(isWin); if (isWin) setCatchPhaseActive(true); }
-    const state = loadState();
-    const daily = Object.assign(
-      { date: key, guesses: newIds, finished: isDone, won: isWin, submitted: false, catchResult: null },
-      { hint1Used, hint1Value, hint2Used, hint2Value, mode },
-    );
-    const stats = isDone
-      ? applyResultToStats(state.stats, isWin, newIds.length, puzzleDate)
-      : state.stats;
-    saveState({ daily, stats });
+    const daily: DailyState = {
+      date: key,
+      mode,
+      guesses: newIds,
+      finished: isDone,
+      won: isWin,
+      submitted: false,
+      catchResult: null,
+      hint1Used,
+      hint1Value,
+      hint2Used,
+      hint2Value,
+    };
+    saveDailyState(key, mode, daily);
+    if (isDone) {
+      const stats = applyResultToStats(loadStats(mode), isWin, newIds.length, puzzleDate);
+      saveStats(mode, stats);
+    }
   }
 
   // ── Catch complete ────────────────────────────────────────────────────────
@@ -407,8 +404,8 @@ function GamePage() {
     const result = { caught, moveChosen };
     setCatchResult(result);
     setCatchPhaseActive(false);
-    const state = loadState();
-    if (state.daily) { Object.assign(state.daily, { catchResult: result }); saveState(state); }
+    const d = loadDailyState(key, mode);
+    if (d) saveDailyState(key, mode, { ...d, catchResult: result });
 
     if (user) {
       // Always record the catch attempt regardless of outcome
@@ -486,10 +483,7 @@ function GamePage() {
       </div>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <ModeSelector mode={mode} onChange={handleModeChange} disabled={guessIds.length > 0} />
-        {guessIds.length > 0 && (
-          <span className="text-xs text-zinc-500">Mode locked — finish to switch</span>
-        )}
+        <ModeSelector mode={mode} onChange={handleModeChange} disabled={false} />
       </div>
 
       {!finished && (

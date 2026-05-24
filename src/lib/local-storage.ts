@@ -1,14 +1,19 @@
-import { todayKey, type GuessResult } from "./pokemon";
+import { type GameMode } from "./pokemon";
 
 const STORAGE_KEY = "pokedle-state";
 
 export interface DailyState {
-  date: string;
-  guesses: number[]; // pokemon ids guessed in order
+  date: string;        // todayKey() — "YYYY-MM-DD-slot"
+  mode: GameMode;
+  guesses: number[];   // pokemon ids guessed in order
   finished: boolean;
   won: boolean;
-  submitted: boolean; // whether result was synced to server (when signed in)
+  submitted: boolean;  // whether result was synced to server
   catchResult?: { caught: boolean; moveChosen: string } | null;
+  hint1Used?: boolean;
+  hint2Used?: boolean;
+  hint1Value?: string | null;
+  hint2Value?: string | null;
 }
 
 export interface LocalStats {
@@ -21,37 +26,125 @@ export interface LocalStats {
 }
 
 export interface StoredState {
-  daily: DailyState | null;
-  stats: LocalStats;
+  // Keyed by "date-mode", e.g. "2026-05-24-am-classic" or "2026-05-24-am-retro"
+  dailyByKey: Record<string, DailyState>;
+  // Stats are per-mode
+  statsByMode: Record<GameMode, LocalStats>;
+  // Legacy field — kept for migration, ignored after first read
+  daily?: unknown;
+  stats?: unknown;
 }
 
-const defaultStats: LocalStats = {
+const defaultStats = (): LocalStats => ({
   currentStreak: 0,
   maxStreak: 0,
   totalPlayed: 0,
   totalWon: 0,
-  guessDistribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0 },
+  guessDistribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0, "9": 0, "10": 0 },
   lastPuzzleDate: null,
-};
+});
 
-export function loadState(): StoredState {
-  if (typeof window === "undefined") return { daily: null, stats: defaultStats };
+function defaultStoredState(): StoredState {
+  return {
+    dailyByKey: {},
+    statsByMode: { classic: defaultStats(), retro: defaultStats() },
+  };
+}
+
+/** Compose the localStorage key for a given date key + mode. */
+export function dailyStateKey(dateKey: string, mode: GameMode): string {
+  return `${dateKey}-${mode}`;
+}
+
+function loadRaw(): StoredState {
+  if (typeof window === "undefined") return defaultStoredState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { daily: null, stats: defaultStats };
-    const parsed = JSON.parse(raw) as StoredState;
-    return {
-      daily: parsed.daily?.date === todayKey() ? parsed.daily : null,
-      stats: { ...defaultStats, ...parsed.stats },
-    };
+    if (!raw) return defaultStoredState();
+    const parsed = JSON.parse(raw) as Partial<StoredState>;
+
+    // Build a clean state, merging in whatever we found
+    const state = defaultStoredState();
+
+    // Migrate legacy single-slot daily state if present
+    if (parsed.daily && typeof parsed.daily === "object" && !parsed.dailyByKey) {
+      const legacy = parsed.daily as DailyState & { mode?: GameMode };
+      const legacyMode: GameMode = legacy.mode ?? "classic";
+      const legacyKey = dailyStateKey(legacy.date, legacyMode);
+      state.dailyByKey[legacyKey] = { ...legacy, mode: legacyMode };
+    }
+
+    if (parsed.dailyByKey) {
+      state.dailyByKey = parsed.dailyByKey;
+    }
+
+    if (parsed.statsByMode) {
+      state.statsByMode = {
+        classic: { ...defaultStats(), ...parsed.statsByMode.classic },
+        retro:   { ...defaultStats(), ...parsed.statsByMode.retro },
+      };
+    } else if (parsed.stats && typeof parsed.stats === "object") {
+      // Migrate legacy stats into classic slot
+      state.statsByMode.classic = { ...defaultStats(), ...(parsed.stats as LocalStats) };
+    }
+
+    return state;
   } catch {
-    return { daily: null, stats: defaultStats };
+    return defaultStoredState();
   }
 }
 
-export function saveState(state: StoredState) {
+/** Load the daily state for a specific date key + mode. Returns null if not found. */
+export function loadDailyState(dateKey: string, mode: GameMode): DailyState | null {
+  const raw = loadRaw();
+  return raw.dailyByKey[dailyStateKey(dateKey, mode)] ?? null;
+}
+
+/** Load stats for a specific mode. */
+export function loadStats(mode: GameMode): LocalStats {
+  const raw = loadRaw();
+  return raw.statsByMode[mode] ?? defaultStats();
+}
+
+/** Save/update daily state for a specific date key + mode. */
+export function saveDailyState(dateKey: string, mode: GameMode, daily: DailyState): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const raw = loadRaw();
+  raw.dailyByKey[dailyStateKey(dateKey, mode)] = daily;
+  // Prune stale entries older than 3 days to keep storage lean
+  const threeDaysAgo = Date.now() - 3 * 86_400_000;
+  for (const k of Object.keys(raw.dailyByKey)) {
+    // Key format: "YYYY-MM-DD-slot-mode" — date is the first 10 chars
+    const datePart = k.slice(0, 10);
+    if (new Date(datePart + "T12:00:00Z").getTime() < threeDaysAgo) {
+      delete raw.dailyByKey[k];
+    }
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+}
+
+/** Save/update stats for a specific mode. */
+export function saveStats(mode: GameMode, stats: LocalStats): void {
+  if (typeof window === "undefined") return;
+  const raw = loadRaw();
+  raw.statsByMode[mode] = stats;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+}
+
+// ─── Legacy compat exports (used in profile page etc.) ───────────────────────
+// These read/write the classic-mode state to maintain backwards compatibility
+// with any code that hasn't been updated yet.
+
+export function loadState() {
+  const raw = loadRaw();
+  return {
+    daily: null as DailyState | null, // not meaningful without mode — use loadDailyState
+    stats: raw.statsByMode.classic,
+  };
+}
+
+export function saveState(_state: { daily: unknown; stats: LocalStats }) {
+  // no-op shim — callers should use saveDailyState/saveStats directly
 }
 
 function isYesterday(prev: string, today: string): boolean {
