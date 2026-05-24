@@ -214,6 +214,7 @@ function GamePage() {
 
   // Mode: persisted in localStorage, locked once the game starts
   const [mode, setMode] = useState<GameMode>(() => {
+    if (typeof window === "undefined") return "classic";
     const saved = localStorage.getItem("pokecatch_mode");
     return (saved === "retro" ? "retro" : "classic") as GameMode;
   });
