@@ -53,13 +53,17 @@ const STATUS_TRAPS: { name: string; type: string }[] = [
 // ─── PokéAPI helpers ──────────────────────────────────────────────────────────
 
 async function fetchWeaknesses(types: string[]): Promise<string[]> {
-  const results = await Promise.all(
-    types.map((t) =>
-      fetch(`https://pokeapi.co/api/v2/type/${t.toLowerCase()}`)
-        .then((r) => r.json())
-        .then((d) => d.damage_relations.double_damage_from.map((x: { name: string }) => x.name) as string[])
-    )
-  );
+  // Fetch in order: Type 1 first, then Type 2. This keeps the results array
+  // deterministically ordered so generateMoves can use a prefix slice to
+  // identify which weaknesses specifically target the primary type.
+  const results: string[][] = [];
+  for (const t of types) {
+    const data = await fetch(`https://pokeapi.co/api/v2/type/${t.toLowerCase()}`)
+      .then((r) => r.json());
+    results.push(
+      data.damage_relations.double_damage_from.map((x: { name: string }) => x.name) as string[]
+    );
+  }
   return results.flat();
 }
 
@@ -87,14 +91,49 @@ function generateMoves(pokemonTypes: string[], weaknesses: string[]): Move[] {
     .filter(([, count]) => count >= 2)
     .map(([t]) => t);
 
-  // 1. Optimal: super effective vs both types (double-weak preferred)
+  // 1. Optimal: prefer the weakness that targets Type 1 (primary type) to
+  //    avoid ties where multiple moves are equally valid answers.
+  //    Priority: double-weak that hits Type 1 → any double-weak → single-weak
+  //    that hits Type 1 → any single-weak → fallback normal.
+  const primaryType = pokemonTypes[0];
+
+  function pickBestWeakness(pool: string[]): string {
+    // Prefer a type that is weak to primary type — i.e. the move type that
+    // the primary type is weak against. We already have the flat weakness list
+    // which lists what types deal super-effective damage TO this Pokémon's
+    // types. So we check: does this weakness type appear as a weakness of
+    // primaryType specifically? We track that via the raw `weaknesses` array
+    // (which is the flat union of all types' double_damage_from lists).
+    // Simpler heuristic: pick the weakness type that appears earliest in the
+    // weakness list for the primary type — we know Type 1 contributes its
+    // weaknesses first in the flattened results array from fetchWeaknesses.
+    // The safest deterministic rule: pick the candidate whose type comes first
+    // alphabetically among those that share the max count, with Type 1 index
+    // in pokemonTypes as the tiebreaker signal.
+    //
+    // Practical implementation: sort candidates so that any type that is
+    // super-effective specifically against the primary Pokémon type comes first.
+    // We approximate this by checking whether the weakness appears in the first
+    // half of the weakness array (which corresponds to Type 1's weaknesses).
+    const primaryWeaknessCount = Math.ceil(weaknesses.length / pokemonTypes.length);
+    const primaryWeaknesses = weaknesses.slice(0, primaryWeaknessCount);
+    const hitsType1 = pool.filter((t) => primaryWeaknesses.includes(t));
+    if (hitsType1.length > 0) return hitsType1[0];
+    return pool[0]; // deterministic: first in pool
+  }
+
   let optimalType: string;
+  let effectiveness: "2x2x" | "2x";
   if (doubleWeakTypes.length > 0) {
-    optimalType = pickRandom(doubleWeakTypes);
+    optimalType = pickBestWeakness(doubleWeakTypes);
+    effectiveness = "2x2x";
   } else if (weaknesses.length > 0) {
-    optimalType = pickRandom(weaknesses);
+    const uniqueWeak = [...new Set(weaknesses)];
+    optimalType = pickBestWeakness(uniqueWeak);
+    effectiveness = "2x";
   } else {
     optimalType = "normal";
+    effectiveness = "2x";
   }
 
   const optimalName = getMoveName(optimalType, used);
@@ -104,7 +143,7 @@ function generateMoves(pokemonTypes: string[], weaknesses: string[]): Move[] {
     type: optimalType,
     isOptimal: true,
     isTrap: false,
-    effectiveness: doubleWeakTypes.includes(optimalType) ? "2x2x" : "2x",
+    effectiveness,
   });
 
   // 2. Trap: status move, preferring one whose type matches a weakness
@@ -122,13 +161,13 @@ function generateMoves(pokemonTypes: string[], weaknesses: string[]): Move[] {
     effectiveness: "trap",
   });
 
-  // 3. Partial: super effective vs only one type
-  const singleWeakTypes = weaknesses.filter(
+  // 3. Partial: super effective vs only one type, but not the chosen optimal
+  const singleWeakTypes = [...new Set(weaknesses)].filter(
     (w) => (allWeakSet[w] ?? 0) < 2 && w !== optimalType
   );
   const partialType =
     singleWeakTypes.length > 0
-      ? pickRandom(singleWeakTypes, [optimalType])
+      ? singleWeakTypes[0]
       : pokemonTypes[0];
   const partialName = getMoveName(partialType, used);
   used.push(partialName);

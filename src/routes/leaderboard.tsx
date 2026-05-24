@@ -35,6 +35,7 @@ type SortDir = "asc" | "desc";
 
 function ColHeader({
   label,
+  shortLabel,
   sortKey,
   active,
   dir,
@@ -43,6 +44,7 @@ function ColHeader({
   title,
 }: {
   label: string;
+  shortLabel?: string;
   sortKey: SortKey;
   active: SortKey;
   dir: SortDir;
@@ -53,13 +55,26 @@ function ColHeader({
   const isActive = active === sortKey;
   return (
     <th
-      className={`px-3 py-2 cursor-pointer select-none whitespace-nowrap group ${align === "right" ? "text-right" : "text-left"}`}
+      className={`px-2 sm:px-3 py-2 cursor-pointer select-none whitespace-nowrap group ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
       title={title}
       onClick={() => onSort(sortKey)}
     >
-      <span className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}>
-        <span className={isActive ? "text-white" : "text-zinc-400 group-hover:text-zinc-200 transition-colors"}>
-          {label}
+      <span
+        className={`inline-flex items-center gap-1 ${
+          align === "right" ? "flex-row-reverse" : ""
+        }`}
+      >
+        <span
+          className={isActive ? "text-white" : "text-zinc-400 group-hover:text-zinc-200 transition-colors"}
+        >
+          {shortLabel ? (
+            <>
+              <span className="hidden sm:inline">{label}</span>
+              <span className="inline sm:hidden">{shortLabel}</span>
+            </>
+          ) : label}
         </span>
         <span className="w-3 text-center">
           {isActive ? (
@@ -132,32 +147,36 @@ function LeaderboardPage() {
               <h2 className="text-xl font-semibold text-white">All-time rankings</h2>
               <p className="text-xs text-zinc-600">Click a column to sort</p>
             </div>
-            <div className="rounded-lg border border-zinc-700 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-lg border border-zinc-700 overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm min-w-[420px]">
                 <thead className="bg-zinc-800">
                   <tr>
-                    <th className="text-left px-3 py-2 text-zinc-400 w-8">#</th>
-                    <th className="text-left px-3 py-2 text-zinc-400">Player</th>
+                    <th className="text-left px-2 sm:px-3 py-2 text-zinc-400 w-7 sm:w-8">#</th>
+                    <th className="text-left px-2 sm:px-3 py-2 text-zinc-400">Player</th>
                     <ColHeader
                       label="Games"
+                      shortLabel="G"
                       sortKey="total_played"
                       title="Total games played"
                       {...colProps}
                     />
                     <ColHeader
                       label="Guess %"
+                      shortLabel="G%"
                       sortKey="guess_success_rate"
                       title="Puzzles solved ÷ played"
                       {...colProps}
                     />
                     <ColHeader
                       label="Catch %"
+                      shortLabel="C%"
                       sortKey="catch_rate"
-                      title="Pokémon caught ÷ puzzles solved"
+                      title="Pokémon caught ÷ catch attempts"
                       {...colProps}
                     />
                     <ColHeader
                       label="Caught"
+                      shortLabel="🎯"
                       sortKey="total_caught"
                       title="Total Pokémon caught all-time"
                       {...colProps}
@@ -167,27 +186,17 @@ function LeaderboardPage() {
                 <tbody>
                   {sorted.map((s, i) => (
                     <tr key={s.user_id} className="border-t border-zinc-700 hover:bg-zinc-800/40 transition-colors">
-                      <td className="px-3 py-2 text-zinc-500 tabular-nums">{i + 1}</td>
-                      <td className="px-3 py-2 font-medium text-white">{s.display_name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">
-                        {s.total_played}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">
-                        {s.guess_success_rate}%
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-zinc-300">
-                        {s.catch_rate}%
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-yellow-400 font-semibold">
-                        {s.total_caught}
-                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-zinc-500 tabular-nums">{i + 1}</td>
+                      <td className="px-2 sm:px-3 py-2 font-medium text-white max-w-[100px] sm:max-w-none truncate">{s.display_name}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.total_played}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.guess_success_rate}%</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-zinc-300">{s.catch_rate}%</td>
+                      <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-yellow-400 font-semibold">{s.total_caught}</td>
                     </tr>
                   ))}
                   {sorted.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
-                        No results yet — be the first!
-                      </td>
+                      <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">No results yet — be the first!</td>
                     </tr>
                   )}
                 </tbody>
