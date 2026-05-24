@@ -7,6 +7,8 @@ import {
   compareGuess,
   emojiGrid,
   getDailyPokemon,
+  fetchDailyPokemon,
+  splitKey,
   MAX_GUESSES,
   msUntilNextPuzzle,
   todayKey,
@@ -174,26 +176,27 @@ function HintBar({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * todayKey() returns "YYYY-MM-DD-am" or "YYYY-MM-DD-pm".
- * Split into { puzzleDate, slot } so the server Zod schema gets a bare date.
- */
-function splitKey(key: string): { puzzleDate: string; slot: "am" | "pm" } {
-  const parts = key.split("-"); // ["2026","05","23","am"]
-  const slot = parts.at(-1) === "pm" ? "pm" : "am";
-  const puzzleDate = parts.slice(0, 3).join("-"); // "2026-05-23"
-  return { puzzleDate, slot };
-}
+// splitKey is imported from @/lib/pokemon — no local duplicate needed.
 
 // ─── Game page ────────────────────────────────────────────────────────────────
 
 function GamePage() {
   const key = todayKey();                              // e.g. "2026-05-23-am"
   const { puzzleDate, slot } = splitKey(key);          // "2026-05-23", "am"
-  const answer = useMemo(() => getDailyPokemon(key), [key]);
+  // Start with the fast hash-based answer immediately so the UI isn't blank,
+  // then replace it if the daily_puzzles table has an override for today.
+  const [answer, setAnswer] = useState<Pokemon>(() => getDailyPokemon(key));
   const { user, loading: authLoading } = useAuth();
   const submitFn = useServerFn(submitDailyResult);
+
+  // Async lookup: replace hash answer with DB-scheduled one if available
+  useEffect(() => {
+    let cancelled = false;
+    fetchDailyPokemon(key).then((p) => {
+      if (!cancelled) setAnswer(p);
+    });
+    return () => { cancelled = true; };
+  }, [key]);
 
   const [guessIds, setGuessIds] = useState<number[]>([]);
   const [finished, setFinished] = useState(false);

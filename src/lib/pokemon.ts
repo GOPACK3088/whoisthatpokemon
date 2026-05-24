@@ -1,4 +1,5 @@
 import pokemonData from "@/data/pokemon.json";
+import { createClient } from "@supabase/supabase-js";
 
 export interface Pokemon {
   id: number;
@@ -62,6 +63,59 @@ function hashString(s: string): number {
 export function getDailyPokemon(dateKey: string = todayKey()): Pokemon {
   const idx = hashString(dateKey) % POKEMON.length;
   return POKEMON[idx];
+}
+
+/**
+ * Async version of getDailyPokemon.
+ * 1. Tries the daily_puzzles Supabase table for the given date + slot.
+ * 2. Falls back to the deterministic hash if no row is found or on any error.
+ *
+ * Uses the public anon key — no auth required (public read RLS policy).
+ */
+export async function fetchDailyPokemon(dateKey: string = todayKey()): Promise<Pokemon> {
+  try {
+    const { puzzleDate, slot } = splitKey(dateKey);
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+    if (supabaseUrl && supabaseAnonKey) {
+      const db = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+
+      const { data, error } = await db
+        .from("daily_puzzles")
+        .select("pokemon_id, pokemon_name")
+        .eq("puzzle_date", puzzleDate)
+        .eq("slot", slot)
+        .maybeSingle();
+
+      if (!error && data) {
+        // Find by id first, then fall back to name match
+        const byId = POKEMON.find((p) => p.id === data.pokemon_id);
+        if (byId) return byId;
+        const byName = POKEMON_BY_NAME.get(data.pokemon_name);
+        if (byName) return byName;
+        console.warn(
+          `[pokemon] daily_puzzles row found (${data.pokemon_name}) but not in local data — using hash fallback`,
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("[pokemon] fetchDailyPokemon DB lookup failed, using hash fallback:", e);
+  }
+
+  // Hash fallback
+  return getDailyPokemon(dateKey);
+}
+
+/** Split a todayKey like "2026-05-23-am" into { puzzleDate, slot }. */
+export function splitKey(key: string): { puzzleDate: string; slot: "am" | "pm" } {
+  const parts = key.split("-");
+  const slot = parts.at(-1) === "pm" ? "pm" : "am";
+  const puzzleDate = parts.slice(0, 3).join("-");
+  return { puzzleDate, slot };
 }
 
 export function msUntilNextPuzzle(): number {
