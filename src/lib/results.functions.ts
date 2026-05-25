@@ -163,24 +163,10 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       { data: profiles,      error: e3 },
       { data: todayResults,  error: e4 },
     ] = await Promise.all([
-      // Classic: pokemon_id > 386 (Gen 4+)
-      db.from("caught_pokemon")
-        .select("user_id")
-        .gt("pokemon_id", RETRO_MAX_ID),
-
-      // Retro: pokemon_id <= 386 (Gen 1–3)
-      db.from("caught_pokemon")
-        .select("user_id")
-        .lte("pokemon_id", RETRO_MAX_ID),
-
-      // Display names
-      db.from("profiles")
-        .select("id, display_name"),
-
-      // Today's results for summary boxes
-      db.from("daily_results")
-        .select("user_id, guesses_used, won, mode")
-        .eq("puzzle_date", today),
+      db.from("caught_pokemon").select("user_id").gt("pokemon_id", RETRO_MAX_ID),
+      db.from("caught_pokemon").select("user_id").lte("pokemon_id", RETRO_MAX_ID),
+      db.from("profiles").select("id, display_name"),
+      db.from("daily_results").select("user_id, guesses_used, won, mode").eq("puzzle_date", today),
     ]);
 
     if (e1) console.error("[leaderboard] classic caught:", e1.message);
@@ -188,25 +174,16 @@ export const getLeaderboard = createServerFn({ method: "GET" })
     if (e3) console.error("[leaderboard] profiles:", e3.message);
     if (e4) console.error("[leaderboard] todayResults:", e4.message);
 
-    console.log("[leaderboard] today:", today,
-      "| classicCaught:", classicCaught?.length ?? 0,
-      "| retroCaught:", retroCaught?.length ?? 0,
-      "| profiles:", profiles?.length ?? 0,
-      "| todayResults:", todayResults?.length ?? 0,
-    );
-
     const nameMap = new Map(
       (profiles ?? []).map((p) => [p.id, p.display_name?.trim() || "Player"])
     );
 
-    // ── Build per-mode leaderboard rows ──────────────────────────────────────
-
     function buildRows(rows: { user_id: string }[]): CaughtLeaderboardRow[] {
-      const countByUser = new Map<string, number>();
+      const counts = new Map<string, number>();
       for (const r of rows) {
-        countByUser.set(r.user_id, (countByUser.get(r.user_id) ?? 0) + 1);
+        counts.set(r.user_id, (counts.get(r.user_id) ?? 0) + 1);
       }
-      return Array.from(countByUser.entries())
+      return Array.from(counts.entries())
         .map(([user_id, total_caught]) => ({
           user_id,
           display_name: nameMap.get(user_id) ?? "Player",
@@ -214,14 +191,6 @@ export const getLeaderboard = createServerFn({ method: "GET" })
         }))
         .sort((a, b) => b.total_caught - a.total_caught);
     }
-
-    const classicRows = buildRows(classicCaught ?? []);
-    const retroRows   = buildRows(retroCaught ?? []);
-
-    console.log("[leaderboard] classic rows:", classicRows.length,
-      "retro rows:", retroRows.length);
-
-    // ── Today stats split by mode ────────────────────────────────────────────
 
     const emptyToday = (): TodayStats => ({ players: 0, solved: 0, avg_guesses: null });
     const classicToday = emptyToday();
@@ -232,21 +201,16 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       const mode = (r as { mode?: string }).mode === "retro" ? "retro" : "classic";
       const bucket = mode === "retro" ? retroToday : classicToday;
       bucket.players += 1;
-      if (r.won) {
-        bucket.solved += 1;
-        guessSums[mode] += r.guesses_used;
-      }
+      if (r.won) { bucket.solved += 1; guessSums[mode] += r.guesses_used; }
     }
     if (classicToday.solved > 0)
-      classicToday.avg_guesses =
-        Math.round((guessSums.classic / classicToday.solved) * 10) / 10;
+      classicToday.avg_guesses = Math.round((guessSums.classic / classicToday.solved) * 10) / 10;
     if (retroToday.solved > 0)
-      retroToday.avg_guesses =
-        Math.round((guessSums.retro / retroToday.solved) * 10) / 10;
+      retroToday.avg_guesses = Math.round((guessSums.retro / retroToday.solved) * 10) / 10;
 
     return {
-      classic: classicRows,
-      retro: retroRows,
-      today: { classic: classicToday, retro: retroToday },
+      classic: buildRows(classicCaught ?? []),
+      retro:   buildRows(retroCaught ?? []),
+      today:   { classic: classicToday, retro: retroToday },
     };
   });
