@@ -318,7 +318,7 @@ function GamePage() {
     if (submitted) return;
     if (!user) return;
 
-    submitFn({ data: { puzzleDate, slot, guessesUsed: guessIds.length, won } })
+    submitFn({ data: { puzzleDate, slot, mode, guessesUsed: guessIds.length, won } })
       .then(() => {
         setSubmitted(true);
         const d = loadDailyState(key, mode);

@@ -1,6 +1,6 @@
 import { type GameMode } from "./pokemon";
 
-const STORAGE_KEY = "pokedle-state";
+const STORAGE_KEY = "pokedle-state-v2";
 
 export interface DailyState {
   date: string;        // todayKey() — "YYYY-MM-DD-slot"
@@ -59,33 +59,54 @@ export function dailyStateKey(dateKey: string, mode: GameMode): string {
 function loadRaw(): StoredState {
   if (typeof window === "undefined") return defaultStoredState();
   try {
+    // Try the current versioned key first
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultStoredState();
-    const parsed = JSON.parse(raw) as Partial<StoredState>;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StoredState>;
+      const state = defaultStoredState();
+      if (parsed.dailyByKey) state.dailyByKey = parsed.dailyByKey;
+      if (parsed.statsByMode) {
+        state.statsByMode = {
+          classic: { ...defaultStats(), ...parsed.statsByMode.classic },
+          retro:   { ...defaultStats(), ...parsed.statsByMode.retro },
+        };
+      }
+      return state;
+    }
 
-    // Build a clean state, merging in whatever we found
+    // No v2 key yet — migrate Classic data from old key, Retro starts fresh
     const state = defaultStoredState();
+    const legacy = localStorage.getItem("pokedle-state");
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as Partial<StoredState>;
 
-    // Migrate legacy single-slot daily state if present
-    if (parsed.daily && typeof parsed.daily === "object" && !parsed.dailyByKey) {
-      const legacy = parsed.daily as DailyState & { mode?: GameMode };
-      const legacyMode: GameMode = legacy.mode ?? "classic";
-      const legacyKey = dailyStateKey(legacy.date, legacyMode);
-      state.dailyByKey[legacyKey] = { ...legacy, mode: legacyMode };
-    }
+      // Migrate old single daily slot (pre-mode era)
+      if (parsed.daily && typeof parsed.daily === "object") {
+        const d = parsed.daily as DailyState & { mode?: GameMode };
+        // Only migrate if it was classic (or untagged — assumed classic)
+        if (!d.mode || d.mode === "classic") {
+          const k = dailyStateKey(d.date, "classic");
+          state.dailyByKey[k] = { ...d, mode: "classic" };
+        }
+      }
 
-    if (parsed.dailyByKey) {
-      state.dailyByKey = parsed.dailyByKey;
-    }
+      // Migrate dailyByKey but only classic entries
+      if (parsed.dailyByKey) {
+        for (const [k, v] of Object.entries(parsed.dailyByKey)) {
+          if (k.endsWith("-classic")) {
+            state.dailyByKey[k] = v as DailyState;
+          }
+          // Retro entries from old storage are intentionally dropped
+        }
+      }
 
-    if (parsed.statsByMode) {
-      state.statsByMode = {
-        classic: { ...defaultStats(), ...parsed.statsByMode.classic },
-        retro:   { ...defaultStats(), ...parsed.statsByMode.retro },
-      };
-    } else if (parsed.stats && typeof parsed.stats === "object") {
-      // Migrate legacy stats into classic slot
-      state.statsByMode.classic = { ...defaultStats(), ...(parsed.stats as LocalStats) };
+      // Migrate classic stats only
+      if (parsed.statsByMode?.classic) {
+        state.statsByMode.classic = { ...defaultStats(), ...parsed.statsByMode.classic };
+      } else if (parsed.stats && typeof parsed.stats === "object") {
+        state.statsByMode.classic = { ...defaultStats(), ...(parsed.stats as LocalStats) };
+      }
+      // Retro stats start at zero — not migrated
     }
 
     return state;

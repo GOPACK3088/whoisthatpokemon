@@ -26,6 +26,7 @@ function anonClient() {
 const submitInput = z.object({
   puzzleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   slot: z.enum(["am", "pm"]),
+  mode: z.enum(["classic", "retro"]),
   guessesUsed: z.number().int().min(1).max(10),
   won: z.boolean(),
 });
@@ -36,12 +37,13 @@ export const submitDailyResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate, "slot:", data.slot, "won:", data.won);
+    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate, "slot:", data.slot, "mode:", data.mode, "won:", data.won);
 
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
       puzzle_date: data.puzzleDate,
       slot: data.slot,
+      mode: data.mode,
       guesses_used: data.guessesUsed,
       won: data.won,
     });
@@ -173,15 +175,13 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
     db.from("profiles")
       .select("id, display_name"),
 
-    // Today's puzzle results
+    // Today's puzzle results — now includes mode column directly
     db.from("daily_results")
-      .select("user_id, guesses_used, won, slot")
+      .select("user_id, guesses_used, won, mode")
       .eq("puzzle_date", today),
 
-    // Today's scheduled puzzles — tells us which slot belongs to which mode
-    db.from("daily_puzzles")
-      .select("slot, mode")
-      .eq("puzzle_date", today),
+    // daily_puzzles no longer needed for mode mapping — kept as null placeholder
+    Promise.resolve({ data: null, error: null }),
   ]);
 
   // Log any query errors (won't throw — we'll just show zeros)
@@ -249,12 +249,8 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
   );
 
   // ── Today stats split by mode ────────────────────────────────────────────
-  // Map each slot ("am"/"pm") to its mode via daily_puzzles for today.
-  // If a slot has no puzzle row, it defaults to "classic".
-
-  const slotMode = new Map<string, string>(
-    (todayPuzzles ?? []).map((p) => [p.slot, p.mode ?? "classic"])
-  );
+  // daily_results now carries mode directly, so no join needed.
+  // Rows without a mode value (inserted before this field was added) count as classic.
 
   const emptyToday = (): TodayStats => ({ players: 0, solved: 0, avg_guesses: null });
   const classicToday = emptyToday();
@@ -262,12 +258,12 @@ export const getLeaderboard = createServerFn({ method: "GET" }).handler(async ()
   const guessSums    = { classic: 0, retro: 0 };
 
   for (const r of todayResults ?? []) {
-    const mode = slotMode.get(r.slot) ?? "classic";
+    const mode = (r as { mode?: string }).mode === "retro" ? "retro" : "classic";
     const bucket = mode === "retro" ? retroToday : classicToday;
     bucket.players += 1;
     if (r.won) {
       bucket.solved += 1;
-      guessSums[mode === "retro" ? "retro" : "classic"] += r.guesses_used;
+      guessSums[mode] += r.guesses_used;
     }
   }
 
