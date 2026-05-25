@@ -6,8 +6,6 @@ import type { Database } from "@/integrations/supabase/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const RETRO_MAX_ID = 386; // Gen 1–3 boundary
-
 function isYesterday(prev: string, today: string): boolean {
   const p = new Date(prev + "T00:00:00Z");
   const t = new Date(today + "T00:00:00Z");
@@ -39,9 +37,6 @@ export const submitDailyResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate,
-      "slot:", data.slot, "mode:", data.mode, "won:", data.won);
-
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
       puzzle_date: data.puzzleDate,
@@ -55,11 +50,7 @@ export const submitDailyResult = createServerFn({ method: "POST" })
       const isDuplicate =
         insertErr.code === "23505" ||
         insertErr.message.toLowerCase().includes("duplicate");
-      if (!isDuplicate) {
-        console.error("[submitDailyResult] insert error:", insertErr);
-        throw new Error(insertErr.message);
-      }
-      console.log("[submitDailyResult] already submitted");
+      if (!isDuplicate) throw new Error(insertErr.message);
       const { data: stats } = await supabase
         .from("user_stats").select("*").eq("user_id", userId).maybeSingle();
       return { stats, alreadySubmitted: true };
@@ -84,26 +75,22 @@ export const submitDailyResult = createServerFn({ method: "POST" })
     }
     const maxStreak = Math.max(existing?.max_streak ?? 0, currentStreak);
 
-    const updated = {
-      user_id: userId,
-      current_streak: currentStreak,
-      max_streak: maxStreak,
-      total_played: (existing?.total_played ?? 0) + 1,
-      total_won: (existing?.total_won ?? 0) + (data.won ? 1 : 0),
-      guess_distribution: dist,
-      last_puzzle_date: data.puzzleDate,
-      updated_at: new Date().toISOString(),
-    };
-
     const { data: saved, error: upErr } = await supabase
-      .from("user_stats").upsert(updated).select().single();
-    if (upErr) {
-      console.error("[submitDailyResult] upsert error:", upErr);
-      throw new Error(upErr.message);
-    }
+      .from("user_stats")
+      .upsert({
+        user_id: userId,
+        current_streak: currentStreak,
+        max_streak: maxStreak,
+        total_played: (existing?.total_played ?? 0) + 1,
+        total_won: (existing?.total_won ?? 0) + (data.won ? 1 : 0),
+        guess_distribution: dist,
+        last_puzzle_date: data.puzzleDate,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (upErr) throw new Error(upErr.message);
 
-    console.log("[submitDailyResult] done — total_played:", updated.total_played,
-      "streak:", currentStreak);
     return { stats: saved, alreadySubmitted: false };
   });
 
@@ -125,92 +112,43 @@ export const getMyStats = createServerFn({ method: "GET" })
     return { stats, results: results ?? [], profile };
   });
 
-// ─── Exported types ───────────────────────────────────────────────────────────
+// ─── getLeaderboard ───────────────────────────────────────────────────────────
 
-export interface CaughtLeaderboardRow {
+export interface LeaderboardRow {
   user_id: string;
   display_name: string;
   total_caught: number;
 }
 
-export interface TodayStats {
-  players: number;
-  solved: number;
-  avg_guesses: number | null;
-}
-
-export interface LeaderboardData {
-  classic: CaughtLeaderboardRow[];   // caught pokemon_id > 386, sorted desc
-  retro: CaughtLeaderboardRow[];     // caught pokemon_id <= 386, sorted desc
-  today: { classic: TodayStats; retro: TodayStats };
-}
-
-// ─── getLeaderboard ───────────────────────────────────────────────────────────
-// Public — no auth required. Anon key + public RLS policies required on all tables.
-//
-// Classic leaderboard: caught_pokemon where pokemon_id > 386
-// Retro leaderboard:   caught_pokemon where pokemon_id <= 386
-// Today stats: split by mode column on daily_results
-
 export const getLeaderboard = createServerFn({ method: "GET" })
-  .handler(async (): Promise<LeaderboardData> => {
+  .handler(async (): Promise<LeaderboardRow[]> => {
     const db = anonClient();
-    const today = new Date().toISOString().slice(0, 10);
 
     const [
-      { data: classicCaught, error: e1 },
-      { data: retroCaught,   error: e2 },
-      { data: profiles,      error: e3 },
-      { data: todayResults,  error: e4 },
+      { data: caughtRows, error: e1 },
+      { data: profiles,   error: e2 },
     ] = await Promise.all([
-      db.from("caught_pokemon").select("user_id").gt("pokemon_id", RETRO_MAX_ID),
-      db.from("caught_pokemon").select("user_id").lte("pokemon_id", RETRO_MAX_ID),
+      db.from("caught_pokemon").select("user_id"),
       db.from("profiles").select("id, display_name"),
-      db.from("daily_results").select("user_id, guesses_used, won, mode").eq("puzzle_date", today),
     ]);
 
-    if (e1) console.error("[leaderboard] classic caught:", e1.message);
-    if (e2) console.error("[leaderboard] retro caught:", e2.message);
-    if (e3) console.error("[leaderboard] profiles:", e3.message);
-    if (e4) console.error("[leaderboard] todayResults:", e4.message);
+    if (e1) console.error("[leaderboard] caught_pokemon:", e1.message);
+    if (e2) console.error("[leaderboard] profiles:", e2.message);
 
     const nameMap = new Map(
       (profiles ?? []).map((p) => [p.id, p.display_name?.trim() || "Player"])
     );
 
-    function buildRows(rows: { user_id: string }[]): CaughtLeaderboardRow[] {
-      const counts = new Map<string, number>();
-      for (const r of rows) {
-        counts.set(r.user_id, (counts.get(r.user_id) ?? 0) + 1);
-      }
-      return Array.from(counts.entries())
-        .map(([user_id, total_caught]) => ({
-          user_id,
-          display_name: nameMap.get(user_id) ?? "Player",
-          total_caught,
-        }))
-        .sort((a, b) => b.total_caught - a.total_caught);
+    const counts = new Map<string, number>();
+    for (const r of caughtRows ?? []) {
+      counts.set(r.user_id, (counts.get(r.user_id) ?? 0) + 1);
     }
 
-    const emptyToday = (): TodayStats => ({ players: 0, solved: 0, avg_guesses: null });
-    const classicToday = emptyToday();
-    const retroToday   = emptyToday();
-    const guessSums    = { classic: 0, retro: 0 };
-
-    for (const r of todayResults ?? []) {
-      const mode = (r as { mode?: string }).mode === "retro" ? "retro" : "classic";
-      const bucket = mode === "retro" ? retroToday : classicToday;
-      bucket.players += 1;
-      if (r.won) { bucket.solved += 1; guessSums[mode] += r.guesses_used; }
-    }
-    if (classicToday.solved > 0)
-      classicToday.avg_guesses = Math.round((guessSums.classic / classicToday.solved) * 10) / 10;
-    if (retroToday.solved > 0)
-      retroToday.avg_guesses = Math.round((guessSums.retro / retroToday.solved) * 10) / 10;
-
-    return {
-      classic: buildRows(classicCaught ?? []),
-      retro:   buildRows(retroCaught ?? []),
-      today:   { classic: classicToday, retro: retroToday },
-    };
+    return Array.from(counts.entries())
+      .map(([user_id, total_caught]) => ({
+        user_id,
+        display_name: nameMap.get(user_id) ?? "Player",
+        total_caught,
+      }))
+      .sort((a, b) => b.total_caught - a.total_caught);
   });
