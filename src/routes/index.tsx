@@ -313,10 +313,10 @@ function GamePage() {
   // `submitted` is session-only (never seeded from localStorage) so this fires
   // correctly even when the user signs in after completing the puzzle.
   useEffect(() => {
-    if (authLoading) return;            // wait for auth to resolve
-    if (!finished) return;              // game not done yet
-    if (submitted) return;              // already synced this session
-    if (!user) return;                  // not signed in
+    if (authLoading) return;
+    if (!finished) return;
+    if (submitted) return;
+    if (!user) return;
 
     submitFn({ data: { puzzleDate, slot, guessesUsed: guessIds.length, won } })
       .then(() => {
@@ -410,7 +410,7 @@ function GamePage() {
 
     if (user) {
       // Always record the catch attempt regardless of outcome
-      const { error: catchResultErr } = await supabase.from("catch_results").upsert(
+      const { error: catchResultErr } = await supabase.from("catch_results").insert(
         {
           user_id: user.id,
           puzzle_date: puzzleDate,
@@ -418,9 +418,8 @@ function GamePage() {
           caught,
           move_chosen: moveChosen || null,
         },
-        { onConflict: "user_id,puzzle_date,slot" },
-      );
-      if (catchResultErr) console.error("[index] Failed to save catch result:", catchResultErr);
+      ).select().maybeSingle();
+      if (catchResultErr && catchResultErr.code !== "23505") console.error("[catch] Failed to save catch result:", catchResultErr);
 
       // Only upsert into caught_pokemon Pokédex if they actually caught it
       if (caught) {
@@ -433,7 +432,7 @@ function GamePage() {
           },
           { onConflict: "user_id,pokemon_id" },
         );
-        if (caughtErr) console.error("[index] Failed to save caught Pokémon:", caughtErr);
+        if (caughtErr) console.error("[catch] Failed to save caught Pokémon:", caughtErr);
       }
     }
   }
