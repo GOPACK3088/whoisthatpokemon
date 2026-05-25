@@ -6,6 +6,8 @@ import type { Database } from "@/integrations/supabase/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const RETRO_MAX_ID = 386; // Gen 1–3 boundary
+
 function isYesterday(prev: string, today: string): boolean {
   const p = new Date(prev + "T00:00:00Z");
   const t = new Date(today + "T00:00:00Z");
@@ -37,7 +39,8 @@ export const submitDailyResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate, "slot:", data.slot, "mode:", data.mode, "won:", data.won);
+    console.log("[submitDailyResult] user:", userId, "date:", data.puzzleDate,
+      "slot:", data.slot, "mode:", data.mode, "won:", data.won);
 
     const { error: insertErr } = await supabase.from("daily_results").insert({
       user_id: userId,
@@ -49,7 +52,9 @@ export const submitDailyResult = createServerFn({ method: "POST" })
     });
 
     if (insertErr) {
-      const isDuplicate = insertErr.code === "23505" || insertErr.message.toLowerCase().includes("duplicate");
+      const isDuplicate =
+        insertErr.code === "23505" ||
+        insertErr.message.toLowerCase().includes("duplicate");
       if (!isDuplicate) {
         console.error("[submitDailyResult] insert error:", insertErr);
         throw new Error(insertErr.message);
@@ -92,9 +97,13 @@ export const submitDailyResult = createServerFn({ method: "POST" })
 
     const { data: saved, error: upErr } = await supabase
       .from("user_stats").upsert(updated).select().single();
-    if (upErr) { console.error("[submitDailyResult] upsert error:", upErr); throw new Error(upErr.message); }
+    if (upErr) {
+      console.error("[submitDailyResult] upsert error:", upErr);
+      throw new Error(upErr.message);
+    }
 
-    console.log("[submitDailyResult] done — total_played:", updated.total_played, "streak:", currentStreak);
+    console.log("[submitDailyResult] done — total_played:", updated.total_played,
+      "streak:", currentStreak);
     return { stats: saved, alreadySubmitted: false };
   });
 
@@ -116,16 +125,12 @@ export const getMyStats = createServerFn({ method: "GET" })
     return { stats, results: results ?? [], profile };
   });
 
-// ─── LeaderboardRow type (exported so leaderboard.tsx can import it) ──────────
+// ─── Exported types ───────────────────────────────────────────────────────────
 
-export interface LeaderboardRow {
+export interface CaughtLeaderboardRow {
   user_id: string;
   display_name: string;
-  total_played: number;
-  total_won: number;
   total_caught: number;
-  guess_rate: number;   // total_won / total_played as integer percent
-  catch_rate: number;   // catch_results successes / attempts as integer percent
 }
 
 export interface TodayStats {
@@ -135,149 +140,113 @@ export interface TodayStats {
 }
 
 export interface LeaderboardData {
-  rows: LeaderboardRow[];
+  classic: CaughtLeaderboardRow[];   // caught pokemon_id > 386, sorted desc
+  retro: CaughtLeaderboardRow[];     // caught pokemon_id <= 386, sorted desc
   today: { classic: TodayStats; retro: TodayStats };
 }
 
 // ─── getLeaderboard ───────────────────────────────────────────────────────────
-// Public — no auth required. Uses the anon key which respects Supabase RLS.
-// All tables must have a public SELECT policy for this to return data.
+// Public — no auth required. Anon key + public RLS policies required on all tables.
 //
-// NOTE: user_stats and catch_results have no mode column, so all-time rankings
-// are combined across modes. Today's stats are split by mode via daily_puzzles.
+// Classic leaderboard: caught_pokemon where pokemon_id > 386
+// Retro leaderboard:   caught_pokemon where pokemon_id <= 386
+// Today stats: split by mode column on daily_results
 
-export const getLeaderboard = createServerFn({ method: "GET" }).handler(async (): Promise<LeaderboardData> => {
-  const db = anonClient();
-  const today = new Date().toISOString().slice(0, 10);
+export const getLeaderboard = createServerFn({ method: "GET" })
+  .handler(async (): Promise<LeaderboardData> => {
+    const db = anonClient();
+    const today = new Date().toISOString().slice(0, 10);
 
-  // Run all queries in parallel
-  const [
-    { data: statsRows,    error: e1 },
-    { data: caughtRows,   error: e2 },
-    { data: catchRows,    error: e3 },
-    { data: profiles,     error: e4 },
-    { data: todayResults, error: e5 },
-    { data: todayPuzzles, error: e6 },
-  ] = await Promise.all([
-    // All-time per-user game stats
-    db.from("user_stats")
-      .select("user_id, total_played, total_won"),
+    const [
+      { data: classicCaught, error: e1 },
+      { data: retroCaught,   error: e2 },
+      { data: profiles,      error: e3 },
+      { data: todayResults,  error: e4 },
+    ] = await Promise.all([
+      // Classic: pokemon_id > 386 (Gen 4+)
+      db.from("caught_pokemon")
+        .select("user_id")
+        .gt("pokemon_id", RETRO_MAX_ID),
 
-    // Total unique Pokémon caught per user (Pokédex entries)
-    db.from("caught_pokemon")
-      .select("user_id"),
+      // Retro: pokemon_id <= 386 (Gen 1–3)
+      db.from("caught_pokemon")
+        .select("user_id")
+        .lte("pokemon_id", RETRO_MAX_ID),
 
-    // All catch phase attempts with outcome
-    db.from("catch_results")
-      .select("user_id, caught"),
+      // Display names
+      db.from("profiles")
+        .select("id, display_name"),
 
-    // Display names
-    db.from("profiles")
-      .select("id, display_name"),
+      // Today's results for summary boxes
+      db.from("daily_results")
+        .select("user_id, guesses_used, won, mode")
+        .eq("puzzle_date", today),
+    ]);
 
-    // Today's puzzle results — now includes mode column directly
-    db.from("daily_results")
-      .select("user_id, guesses_used, won, mode")
-      .eq("puzzle_date", today),
+    if (e1) console.error("[leaderboard] classic caught:", e1.message);
+    if (e2) console.error("[leaderboard] retro caught:", e2.message);
+    if (e3) console.error("[leaderboard] profiles:", e3.message);
+    if (e4) console.error("[leaderboard] todayResults:", e4.message);
 
-    // daily_puzzles no longer needed for mode mapping — kept as null placeholder
-    Promise.resolve({ data: null, error: null }),
-  ]);
+    console.log("[leaderboard] today:", today,
+      "| classicCaught:", classicCaught?.length ?? 0,
+      "| retroCaught:", retroCaught?.length ?? 0,
+      "| profiles:", profiles?.length ?? 0,
+      "| todayResults:", todayResults?.length ?? 0,
+    );
 
-  // Log any query errors (won't throw — we'll just show zeros)
-  if (e1) console.error("[leaderboard] user_stats:", e1.message);
-  if (e2) console.error("[leaderboard] caught_pokemon:", e2.message);
-  if (e3) console.error("[leaderboard] catch_results:", e3.message);
-  if (e4) console.error("[leaderboard] profiles:", e4.message);
-  if (e5) console.error("[leaderboard] daily_results:", e5.message);
-  if (e6) console.error("[leaderboard] daily_puzzles:", e6.message);
+    const nameMap = new Map(
+      (profiles ?? []).map((p) => [p.id, p.display_name?.trim() || "Player"])
+    );
 
-  console.log("[leaderboard] today:", today,
-    "| stats:", statsRows?.length ?? 0,
-    "| caught:", caughtRows?.length ?? 0,
-    "| catchResults:", catchRows?.length ?? 0,
-    "| profiles:", profiles?.length ?? 0,
-    "| todayResults:", todayResults?.length ?? 0,
-    "| todayPuzzles:", todayPuzzles?.length ?? 0,
-  );
+    // ── Build per-mode leaderboard rows ──────────────────────────────────────
 
-  // ── Build lookup maps ────────────────────────────────────────────────────
+    function buildRows(rows: { user_id: string }[]): CaughtLeaderboardRow[] {
+      const countByUser = new Map<string, number>();
+      for (const r of rows) {
+        countByUser.set(r.user_id, (countByUser.get(r.user_id) ?? 0) + 1);
+      }
+      return Array.from(countByUser.entries())
+        .map(([user_id, total_caught]) => ({
+          user_id,
+          display_name: nameMap.get(user_id) ?? "Player",
+          total_caught,
+        }))
+        .sort((a, b) => b.total_caught - a.total_caught);
+    }
 
-  const nameMap = new Map(
-    (profiles ?? []).map((p) => [p.id, p.display_name?.trim() || "Player"])
-  );
+    const classicRows = buildRows(classicCaught ?? []);
+    const retroRows   = buildRows(retroCaught ?? []);
 
-  // Total caught per user
-  const caughtCount = new Map<string, number>();
-  for (const r of caughtRows ?? []) {
-    caughtCount.set(r.user_id, (caughtCount.get(r.user_id) ?? 0) + 1);
-  }
+    console.log("[leaderboard] classic rows:", classicRows.length,
+      "retro rows:", retroRows.length);
 
-  // Catch attempts and successes per user
-  const catchTally = new Map<string, { attempts: number; successes: number }>();
-  for (const r of catchRows ?? []) {
-    const t = catchTally.get(r.user_id) ?? { attempts: 0, successes: 0 };
-    t.attempts += 1;
-    if (r.caught) t.successes += 1;
-    catchTally.set(r.user_id, t);
-  }
+    // ── Today stats split by mode ────────────────────────────────────────────
 
-  // ── All-time leaderboard rows ────────────────────────────────────────────
+    const emptyToday = (): TodayStats => ({ players: 0, solved: 0, avg_guesses: null });
+    const classicToday = emptyToday();
+    const retroToday   = emptyToday();
+    const guessSums    = { classic: 0, retro: 0 };
 
-  const rows: LeaderboardRow[] = (statsRows ?? []).map((s) => {
-    const played = s.total_played ?? 0;
-    const won    = s.total_won ?? 0;
-    const caught = caughtCount.get(s.user_id) ?? 0;
-    const tally  = catchTally.get(s.user_id);
+    for (const r of todayResults ?? []) {
+      const mode = (r as { mode?: string }).mode === "retro" ? "retro" : "classic";
+      const bucket = mode === "retro" ? retroToday : classicToday;
+      bucket.players += 1;
+      if (r.won) {
+        bucket.solved += 1;
+        guessSums[mode] += r.guesses_used;
+      }
+    }
+    if (classicToday.solved > 0)
+      classicToday.avg_guesses =
+        Math.round((guessSums.classic / classicToday.solved) * 10) / 10;
+    if (retroToday.solved > 0)
+      retroToday.avg_guesses =
+        Math.round((guessSums.retro / retroToday.solved) * 10) / 10;
 
     return {
-      user_id:      s.user_id,
-      display_name: nameMap.get(s.user_id) ?? "Player",
-      total_played: played,
-      total_won:    won,
-      total_caught: caught,
-      guess_rate:   played > 0 ? Math.round((won / played) * 100) : 0,
-      catch_rate:   tally && tally.attempts > 0
-                      ? Math.round((tally.successes / tally.attempts) * 100)
-                      : 0,
+      classic: classicRows,
+      retro: retroRows,
+      today: { classic: classicToday, retro: retroToday },
     };
   });
-
-  console.log("[leaderboard] rows built:", rows.length);
-  rows.forEach((r) =>
-    console.log(`  ${r.display_name}: played=${r.total_played} won=${r.total_won} caught=${r.total_caught} guess%=${r.guess_rate} catch%=${r.catch_rate}`)
-  );
-
-  // ── Today stats split by mode ────────────────────────────────────────────
-  // daily_results now carries mode directly, so no join needed.
-  // Rows without a mode value (inserted before this field was added) count as classic.
-
-  const emptyToday = (): TodayStats => ({ players: 0, solved: 0, avg_guesses: null });
-  const classicToday = emptyToday();
-  const retroToday   = emptyToday();
-  const guessSums    = { classic: 0, retro: 0 };
-
-  for (const r of todayResults ?? []) {
-    const mode = (r as { mode?: string }).mode === "retro" ? "retro" : "classic";
-    const bucket = mode === "retro" ? retroToday : classicToday;
-    bucket.players += 1;
-    if (r.won) {
-      bucket.solved += 1;
-      guessSums[mode] += r.guesses_used;
-    }
-  }
-
-  if (classicToday.solved > 0) {
-    classicToday.avg_guesses = Math.round((guessSums.classic / classicToday.solved) * 10) / 10;
-  }
-  if (retroToday.solved > 0) {
-    retroToday.avg_guesses = Math.round((guessSums.retro / retroToday.solved) * 10) / 10;
-  }
-
-  console.log("[leaderboard] today classic:", classicToday, "retro:", retroToday);
-
-  return {
-    rows,
-    today: { classic: classicToday, retro: retroToday },
-  };
-});
